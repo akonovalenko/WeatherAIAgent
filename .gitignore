@@ -1,0 +1,73 @@
+# Build results
+bin/
+obj/
+Debug/
+Release/
+
+# Visual Studio files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# NuGet
+*.nupkg
+packages/
+*.snupkg
+
+# Resharper / Rider
+_ReSharper*/
+*.DotSettings.user
+
+# Other IDE caches
+.idea/
+*.iml
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Publish outputs
+publish/
+dist/
+
+# WPF / WinForms build artifacts
+*.exe.config
+*.manifest
+*.application
+*.deploy
+*.pdb
+
+# Auto-generated resources
+*.g.*
+*.generated.*
+*.designer.cs
+*.AssemblyInfo.cs
+
+# Backup and cache
+*.cache
+*.dbmdl
+*.bak
+*.swp
+
+# IIS / ASP.NET
+_IISExpress/
+*.vspscc
+*.vsss
