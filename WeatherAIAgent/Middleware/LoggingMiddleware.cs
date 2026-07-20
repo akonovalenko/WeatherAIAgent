@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using WeatherAIAgent.Helpers;
 using WeatherAIAgent.Models;
 
 namespace WeatherAgent.Middleware;
@@ -21,11 +22,10 @@ public sealed class LoggingMiddleware : IAgentMiddleware
         this._logger = logger;
     }
 
-
     /// <summary>
     /// Processes the input and invokes the next middleware in the pipeline asynchronously, while logging the input, output, and any exceptions that occur during processing.
     /// </summary>
-    /// <param name="context">The agent context containing the input and other information.</param>
+    /// <param name="context">The agent context.</param>
     /// <param name="next">The next function in the pipeline.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task<string> InvokeAsync(
@@ -48,8 +48,9 @@ public sealed class LoggingMiddleware : IAgentMiddleware
         }
         catch (Exception ex)
         {
-            this._logger.LogError(ex, "Agent request failed");
+            this._logger.LogError("Agent request failed: {Error}", ErrorHelper.GetShortError(ex));
             throw;
         }
     }
+
 }

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using WeatherAIAgent.Models;
+using WeatherAIAgent.Helpers;
 
 namespace WeatherAgent.Middleware;
 
@@ -45,11 +46,12 @@ public sealed class CorrelationMiddleware : IAgentMiddleware
         catch (Exception ex)
         {
             this._logger.LogError(
-                ex,
-                "Agent request failed. CorrelationId: {CorrelationId}",
-                context.CorrelationId);
+                "Agent request failed. CorrelationId: {CorrelationId}. Error: {Error}",
+                context.CorrelationId,
+                ErrorHelper.GetShortError(ex));
 
             throw;
         }
     }
+
 }

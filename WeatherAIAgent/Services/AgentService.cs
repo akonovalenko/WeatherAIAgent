@@ -2,6 +2,7 @@ using OpenAI.Chat;
 using System.Text.Json;
 using WeatherAgent.Helpers;
 using WeatherAgent.Models;
+using WeatherAIAgent.Helpers;
 using WeatherAIAgent.Models;
 
 namespace WeatherAgent.Services;
@@ -14,7 +15,6 @@ public sealed class AgentService
 {
     private readonly ChatClient _chatClient;
     private readonly IWeatherService _weatherService;
-
 
     private const string SystemPrompt = """
         You are a weather assistant.
@@ -35,10 +35,10 @@ public sealed class AgentService
         """;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="AgentService"/> class.
+    /// Initializes a new instance of the <see cref="AgentService"/> class with the specified chat client factory and weather service.
     /// </summary>
-    /// <param name="chatClientFactory">The factory for creating chat clients.</param>
-    /// <param name="weatherService"></param>
+    /// <param name="chatClientFactory">The chat client factory.</param>
+    /// <param name="weatherService">The weather service.</param>
     public AgentService(
         IChatClientFactory chatClientFactory,
         IWeatherService weatherService)
@@ -48,18 +48,17 @@ public sealed class AgentService
     }
 
     /// <summary>
-    /// Asks the AI agent a question and returns the response.
+    /// Asks the AI agent a question and returns the response, handling tool calls and errors.
     /// </summary>
-    /// <param name="context">The context of the agent.</param>
-    /// <returns></returns>
+    /// <param name="context">The agent context.</param>
+    /// <returns>The response from the AI agent.</returns>
     public async Task<string> AskAsync(
         AgentContext context)
     {
         var tool =
             ChatTool.CreateFunctionTool(
                 functionName: "GetCurrentWeather",
-                functionDescription:
-                    "Get current weather by city name",
+                functionDescription: "Get current weather by city name",
                 functionParameters:
                     BinaryData.FromObjectAsJson(
                     new
@@ -75,7 +74,7 @@ public sealed class AgentService
                             }
                         },
 
-                        required = new[] { "location" } 
+                        required = new[] { "location" }
                     }));
 
         List<ChatMessage> messages =
@@ -84,13 +83,24 @@ public sealed class AgentService
             new UserChatMessage(context.Input)
         ];
 
-        ChatCompletion completion =
-            await _chatClient.CompleteChatAsync(
-                messages,
-                new ChatCompletionOptions
-                {
-                    Tools = { tool }
-                });
+        ChatCompletion completion;
+        try
+        {
+            completion =
+                await _chatClient.CompleteChatAsync(
+                    messages,
+                    new ChatCompletionOptions
+                    {
+                        Tools = { tool }
+                    });
+        }
+        catch (Exception ex)
+        {
+            var shortError = ErrorHelper.GetShortError(ex);
+            context.Items["AgentError"] = shortError;
+            var weatherError = context.Items.TryGetValue("WeatherError", out var w) ? w?.ToString() : null;
+            return ErrorHelper.CombineErrors(shortError, weatherError);
+        }
 
         SaveUsage(context, completion);
 
@@ -118,7 +128,18 @@ public sealed class AgentService
             using JsonDocument json = JsonDocument.Parse(call.FunctionArguments);
             string location = json.RootElement.GetProperty("location").GetString()!;
             context.Items["WeatherLocation"] = location;
-            WeatherInfo weather = await _weatherService.GetCurrentWeatherAsync(location);
+            WeatherInfo weather;
+            try
+            {
+                weather = await _weatherService.GetCurrentWeatherAsync(location);
+            }
+            catch (Exception ex)
+            {
+                // Store concise weather service error and return it immediately.
+                var weatherError = ErrorHelper.GetShortError(ex);
+                context.Items["WeatherError"] = weatherError;
+                return ErrorHelper.CombineErrors(null, weatherError);
+            }
             context.WeatherLocation = location;
 
             string airQuality = WeatherHelper.GetAirQualityDescription(weather.AirQualityIndex);
@@ -168,18 +189,27 @@ public sealed class AgentService
             - PM10: {weather.Pm10}
             """;
 
-
             messages.Add(new AssistantChatMessage(completion));
             messages.Add(new ToolChatMessage(call.Id, toolResult));
         }
 
-        ChatCompletion finalAnswer = await this._chatClient.CompleteChatAsync(messages);
-        SaveUsage(context, finalAnswer);
-        return finalAnswer.Content[0].Text;
+        try
+        {
+            ChatCompletion finalAnswer = await this._chatClient.CompleteChatAsync(messages);
+            SaveUsage(context, finalAnswer);
+            return finalAnswer.Content[0].Text;
+        }
+        catch (Exception ex)
+        {
+            var openAiError = ErrorHelper.GetShortError(ex);
+            context.Items["AgentError"] = openAiError;
+            var weatherError = context.Items.TryGetValue("WeatherError", out var w) ? w?.ToString() : null;
+            return ErrorHelper.CombineErrors(openAiError, weatherError);
+        }
     }
 
     /// <summary>
-    /// Saves the token usage information from the chat completion to the agent context.
+    /// Saves the total token usage from the chat completion into the context items.        
     /// </summary>
     /// <param name="context">The agent context.</param>
     /// <param name="completion">The chat completion.</param>
