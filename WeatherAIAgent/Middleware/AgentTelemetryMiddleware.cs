@@ -54,18 +54,6 @@ public sealed class AgentTelemetryMiddleware
                 duration,
                 context.Input.Length);
 
-            // Token usage
-            if (context.Items.TryGetValue("TotalTokens", out var tokens))
-            {
-                this._logger.LogInformation("Token usage: {Tokens}", tokens);
-            }
-
-            // Cost control
-            if (context.Items.TryGetValue("EstimatedCost", out var cost))
-            {
-                this._logger.LogInformation("Estimated cost: ${Cost}", cost);
-            }
-
             return result;
         }
         catch(Exception ex)

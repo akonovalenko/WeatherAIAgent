@@ -213,19 +213,45 @@ public sealed class AgentService
     /// </summary>
     /// <param name="context">The agent context.</param>
     /// <param name="completion">The chat completion.</param>
-    private static void SaveUsage(
-        AgentContext context,
-        ChatCompletion completion)
+    private void SaveUsage(
+    AgentContext context,
+    ChatCompletion completion)
     {
-        if (completion.Usage == null)
+        if (completion?.Usage == null)
+            return;
+
+        object usageObj = completion.Usage!;
+
+        int inputTokens = AgentServiceHelpers.TryGetInt(usageObj, "InputTokenCount", "InputTokens", "PromptTokens", "PromptTokenCount");
+        int outputTokens = AgentServiceHelpers.TryGetInt(usageObj, "OutputTokenCount", "OutputTokens", "CompletionTokens", "CompletionTokenCount");
+        int totalTokens = AgentServiceHelpers.TryGetInt(usageObj, "TotalTokenCount", "TotalTokens", "total_tokens", "Total");
+
+        if (totalTokens == 0)
+            totalTokens = inputTokens + outputTokens;
+
+        if (totalTokens <= 0)
             return;
 
         var usage = new TokenUsageInfo
         {
-            InputTokens = completion.Usage.InputTokenCount,
-            OutputTokens = completion.Usage.OutputTokenCount,
-            TotalTokens = completion.Usage.TotalTokenCount
+            Model = completion.Model ?? string.Empty,
+            InputTokens = inputTokens,
+            OutputTokens = outputTokens,
+            TotalTokens = totalTokens,
+            EstimatedCost = 0m
         };
+
+        var env = Environment.GetEnvironmentVariable("PRICE_PER_1K_TOKENS");
+        if (!string.IsNullOrWhiteSpace(env)
+            && decimal.TryParse(env, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var pricePer1k))
+        {
+            usage.EstimatedCost = Math.Round((usage.TotalTokens / 1000m) * pricePer1k, 6);
+        }
+
+        // per-request usage and cost
         context.Items["TokenUsage"] = usage;
+        context.Items["TotalTokensPerRequest"] = usage.TotalTokens;
+        context.Items["EstimatedCostPerRequest"] = usage.EstimatedCost;
+
     }
 }

@@ -75,6 +75,7 @@ WeatherAIAgent
 │   ├── LoggingMiddleware.cs
 │   ├── OutputValidationMiddleware.cs
 │   ├── RateLimitMiddleware.cs
+│   ├── TokenUsageMiddleware.cs
 │   └── RetryMiddleware.cs
 │
 ├── Models
@@ -143,6 +144,12 @@ Automatically retries transient failures.
 ## AgentTelemetryMiddleware
 
 Collects execution metrics and token usage.
+
+---
+
+## TokenUsageMiddleware
+
+Reads per-request token usage saved by the agent service and logs a concise summary. The middleware prints a short console line with the number of tokens used for the current request and the aggregated total across the process, as well as estimated cost when `PRICE_PER_1K_TOKENS` is configured. It reads `context.Items["TokenUsage"]` and numeric keys such as `TotalTokensPerRequest`, `EstimatedCostPerRequest`, `TotalTokens`, and `TotalEstimatedCost`.
 
 ---
 

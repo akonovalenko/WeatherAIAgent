@@ -38,6 +38,7 @@ public static class ServiceCollectionExtensions
             });
 
         services.AddSingleton<IAgentMiddleware, OutputValidationMiddleware>();
+        services.AddSingleton<IAgentMiddleware, TokenUsageMiddleware>();
         services.AddSingleton<IAgentMiddleware, AgentTelemetryMiddleware>();
         services.AddSingleton<IAgentMiddleware, CorrelationMiddleware>();
         services.AddSingleton<IAgentMiddleware, RateLimitMiddleware>();
