@@ -1,17 +1,16 @@
 using Microsoft.Extensions.Logging;
 using WeatherAIAgent.Models;
+using WeatherAgent.Services;
 
 namespace WeatherAgent.Middleware;
 
 /// <summary>
-/// Middleware that retries failed agent requests using exponential backoff.
+/// Retries the complete agent operation when a transient dependency failure occurs.
 /// </summary>
-/// <Author>Oleksii Konovalenko</Author>
 public sealed class RetryMiddleware : IAgentMiddleware
 {
+    private const int MaxAttempts = 3;
     private readonly ILogger<RetryMiddleware> _logger;
-
-    private readonly int _maxRetries = 3;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RetryMiddleware"/> class with the specified logger.
@@ -23,54 +22,60 @@ public sealed class RetryMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Invokes the middleware to handle the agent request, retrying on transient errors.
+    /// Invokes the middleware, retrying the agent operation on transient errors.
     /// </summary>
     /// <param name="context">The agent context.</param>
-    /// <param name="next">The next function in the pipeline.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
+    /// <param name="next">The next delegate in the pipeline.</param>
+    /// <returns>The result of the middleware execution.</returns>
     /// <exception cref="InvalidOperationException"></exception>
     public async Task<string> InvokeAsync(
         AgentContext context,
         Func<Task<string>> next)
     {
         Exception? lastException = null;
-        for (int attempt = 1; attempt <= _maxRetries; attempt++)
+
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
         {
+            context.Items["RetryAttempt"] = attempt;
+
             try
             {
-                context.Items["RetryAttempt"] = attempt;
-                if (attempt > 1)
-                {
-                    this._logger.LogWarning(
-                        "Retry attempt {Attempt}/{MaxRetries}. CorrelationId: {CorrelationId}",
-                        attempt,
-                        _maxRetries,
-                        context.CorrelationId);
-                }
                 return await next();
+            }
+            catch (Exception ex) when (IsTransientError(ex) && attempt < MaxAttempts)
+            {
+                lastException = ex;
+
+                var delay = GetDelay(attempt);
+                this._logger.LogWarning(
+                    ex,
+                    "Transient error. Retrying agent request in {DelayMs} ms. Attempt {Attempt}/{MaxAttempts}. CorrelationId: {CorrelationId}",
+                    delay.TotalMilliseconds,
+                    attempt,
+                    MaxAttempts,
+                    context.CorrelationId);
+
+                await Task.Delay(delay);
             }
             catch (Exception ex) when (IsTransientError(ex))
             {
                 lastException = ex;
-
-                this._logger.LogWarning(
-                    ex,
-                    "Transient error during agent execution. Attempt {Attempt}/{MaxRetries}",
-                    attempt,
-                    _maxRetries);
-
-                if (attempt == _maxRetries)
-                    break;
-
-                var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt));
-                await Task.Delay(delay);
+                break;
             }
         }
 
         throw new InvalidOperationException(
-            $"Agent request failed after {_maxRetries} retries.",
+            $"Agent request failed after {MaxAttempts} attempts.",
             lastException);
     }
+
+    /// <summary>
+    /// Calculates the delay before the next retry attempt using exponential backoff.
+    /// </summary>
+    /// <param name="attempt">The current retry attempt number.</param>
+    /// <returns>The delay before the next retry attempt.</returns>
+    private static TimeSpan GetDelay(int attempt) =>
+        TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
 
     /// <summary>
     /// Determines whether the specified exception is a transient error that can be retried.
@@ -79,15 +84,38 @@ public sealed class RetryMiddleware : IAgentMiddleware
     /// <returns>true if the exception is a transient error; otherwise, false.</returns>
     private static bool IsTransientError(Exception ex)
     {
-        return ex switch
+        if (ex is WeatherServiceException { IsTransient: true } ||
+            ex is HttpRequestException ||
+            ex is TimeoutException ||
+            ex is TaskCanceledException)
         {
-            HttpRequestException => true,
+            return true;
+        }
 
-            TaskCanceledException => true,
+        // OpenAI-compatible SDKs can surface HTTP failures as SDK-specific exceptions.
+        // Inspect a Status/StatusCode property without coupling this middleware to a provider SDK.
+        var status = GetStatusCode(ex);
+        if (status is 408 or 429 or >= 500 and <= 599)
+            return true;
 
-            TimeoutException => true,
+        return ex.InnerException is not null && IsTransientError(ex.InnerException);
+    }
 
-            _ => false
+    /// <summary>
+    /// Gets the HTTP status code from the exception if it has a Status or StatusCode property.
+    /// </summary>
+    /// <param name="ex">The exception to inspect.</param>
+    /// <returns>The HTTP status code, or null if not found.</returns>
+    private static int? GetStatusCode(Exception ex)
+    {
+        var property = ex.GetType().GetProperty("Status") ?? ex.GetType().GetProperty("StatusCode");
+        var value = property?.GetValue(ex);
+
+        return value switch
+        {
+            int status => status,
+            _ when value is not null && int.TryParse(value.ToString(), out var status) => status,
+            _ => null
         };
     }
 }

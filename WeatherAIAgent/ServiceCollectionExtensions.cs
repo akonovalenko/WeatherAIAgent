@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using WeatherAgent.Middleware;
 using WeatherAgent.Services;
-using WeatherAIAgent.Middleware;
 using WeatherAIAgent.Models;
 
 namespace WeatherAgent.Extensions;
@@ -33,19 +32,22 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<IWeatherService, WeatherApiService>(
             (sp, client) => {
                 var options = sp.GetRequiredService<IOptions<WeatherApiOptions>>().Value;
-                client.BaseAddress = new Uri(options.BaseUrl);
+                client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
                 client.Timeout = options.Timeout;
             });
 
+        // Registration order is execution order. Retry must be inside the exception
+        // boundary so transient exceptions can propagate to it before final handling.
+        services.AddSingleton<IAgentMiddleware, CorrelationMiddleware>();
+        services.AddSingleton<IAgentMiddleware, AgentTelemetryMiddleware>();
+        services.AddSingleton<IAgentMiddleware, ExceptionMiddleware>();
+        services.AddSingleton<IAgentMiddleware, LoggingMiddleware>();
+        services.AddSingleton<IAgentMiddleware, GuardMiddleware>();
+        services.AddSingleton<IAgentMiddleware, InputSanitizationMiddleware>();
+        services.AddSingleton<IAgentMiddleware, RateLimitMiddleware>();
+        services.AddSingleton<IAgentMiddleware, RetryMiddleware>();
         services.AddSingleton<IAgentMiddleware, OutputValidationMiddleware>();
         services.AddSingleton<IAgentMiddleware, TokenUsageMiddleware>();
-        services.AddSingleton<IAgentMiddleware, AgentTelemetryMiddleware>();
-        services.AddSingleton<IAgentMiddleware, CorrelationMiddleware>();
-        services.AddSingleton<IAgentMiddleware, RateLimitMiddleware>();
-        services.AddSingleton<IAgentMiddleware, InputSanitizationMiddleware>();
-        services.AddSingleton<IAgentMiddleware, GuardMiddleware>();
-        services.AddSingleton<IAgentMiddleware, LoggingMiddleware>();
-        services.AddSingleton<IAgentMiddleware, RetryMiddleware>();
 
         services.AddSingleton<AgentPipeline>();
         services.AddSingleton<AgentService>();

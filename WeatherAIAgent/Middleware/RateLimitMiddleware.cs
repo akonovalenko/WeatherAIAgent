@@ -5,55 +5,78 @@ using WeatherAIAgent.Models;
 namespace WeatherAgent.Middleware;
 
 /// <summary>
-/// Limits the number of agent requests per user.
-/// Default limit: 10 requests per minute.
+/// Limits requests per user using a fixed one-minute sliding window.
 /// </summary>
 public sealed class RateLimitMiddleware : IAgentMiddleware
 {
-    private readonly ILogger<RateLimitMiddleware> _logger;
     private const int MaxRequests = 10;
     private static readonly TimeSpan TimeWindow = TimeSpan.FromMinutes(1);
-    private readonly ConcurrentDictionary<string, List<DateTime>> _requests = new();
+
+    private readonly ILogger<RateLimitMiddleware> _logger;
+    private readonly ConcurrentDictionary<string, List<DateTimeOffset>> _requests = new();
+    private int _requestCounter;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RateLimitMiddleware"/> class with the specified logger.
     /// </summary>
-    /// <param name="logger">The logger to use.</param>
-    public RateLimitMiddleware(
-        ILogger<RateLimitMiddleware> logger)
+    /// <param name="logger">The logger to use for logging.</param>
+    public RateLimitMiddleware(ILogger<RateLimitMiddleware> logger)
     {
         this._logger = logger;
     }
 
     /// <summary>
-    /// Invokes the middleware to check the rate limit for the user and either allows the request to proceed or returns an error message if the limit is exceeded.  
+    /// Invokes the middleware to enforce rate limiting for the specified user context. 
     /// </summary>
     /// <param name="context">The agent context.</param>
-    /// <param name="next">The next middleware in the pipeline.</param>
+    /// <param name="next">The next delegate in the pipeline.</param>
     /// <returns>The result of the middleware execution.</returns>
     public async Task<string> InvokeAsync(
         AgentContext context,
         Func<Task<string>> next)
     {
-        var userId = context.UserId;
-        var now = DateTime.UtcNow;
-        var timestamps = this._requests.GetOrAdd(userId,_ => new List<DateTime>());
+        var now = DateTimeOffset.UtcNow;
+        var timestamps = _requests.GetOrAdd(context.UserId, _ => new List<DateTimeOffset>());
+
         lock (timestamps)
         {
-            timestamps.RemoveAll(x => now - x > TimeWindow);
+            timestamps.RemoveAll(timestamp => now - timestamp >= TimeWindow);
 
             if (timestamps.Count >= MaxRequests)
             {
-                this._logger.LogWarning("Rate limit exceeded for user {UserId}", userId);
+                this._logger.LogWarning(
+                    "Rate limit exceeded for user {UserId}. CorrelationId: {CorrelationId}",
+                    context.UserId,
+                    context.CorrelationId);
 
-               return """
-                Request limit exceeded.
-                Maximum 10 requests per minute.
-                Please wait and try again.
-                """;
+                return "Request limit exceeded.\nMaximum 10 requests per minute.\nPlease wait and try again.";
             }
+
             timestamps.Add(now);
         }
+
+        // Avoid scanning the whole dictionary on every request.
+        if (Interlocked.Increment(ref _requestCounter) % 100 == 0)
+            CleanupInactiveUsers(now);
+
         return await next();
+    }
+
+    /// <summary>
+    /// Cleans up inactive users from the request tracking dictionary to prevent memory growth.
+    /// </summary>
+    /// <param name="now">The current date and time.</param>
+    private void CleanupInactiveUsers(DateTimeOffset now)
+    {
+        foreach (var pair in this._requests)
+        {
+            lock (pair.Value)
+            {
+                pair.Value.RemoveAll(timestamp => now - timestamp >= TimeWindow);
+
+                if (pair.Value.Count == 0)
+                    this._requests.TryRemove(new KeyValuePair<string, List<DateTimeOffset>>(pair.Key, pair.Value));
+            }
+        }
     }
 }

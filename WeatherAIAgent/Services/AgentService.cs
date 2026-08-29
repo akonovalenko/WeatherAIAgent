@@ -8,11 +8,13 @@ using WeatherAIAgent.Models;
 namespace WeatherAgent.Services;
 
 /// <summary>
-/// AI weather agent service with tool calling and telemetry support.
+/// AI weather agent service with tool calling and token usage tracking.
+/// Exceptions are intentionally allowed to propagate so RetryMiddleware can handle transient failures.
 /// </summary>
-/// <Author>Oleksii Konovalenko</Author>
 public sealed class AgentService
 {
+    private const string WeatherToolName = "GetCurrentWeather";
+
     private readonly ChatClient _chatClient;
     private readonly IWeatherService _weatherService;
 
@@ -34,48 +36,17 @@ public sealed class AgentService
         - Preserve the original formatting exactly.
         """;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AgentService"/> class with the specified chat client factory and weather service.
-    /// </summary>
-    /// <param name="chatClientFactory">The chat client factory.</param>
-    /// <param name="weatherService">The weather service.</param>
     public AgentService(
         IChatClientFactory chatClientFactory,
         IWeatherService weatherService)
     {
-        this._chatClient = chatClientFactory.Create();
-        this._weatherService = weatherService;
+        _chatClient = chatClientFactory.Create();
+        _weatherService = weatherService;
     }
 
-    /// <summary>
-    /// Asks the AI agent a question and returns the response, handling tool calls and errors.
-    /// </summary>
-    /// <param name="context">The agent context.</param>
-    /// <returns>The response from the AI agent.</returns>
-    public async Task<string> AskAsync(
-        AgentContext context)
+    public async Task<string> AskAsync(AgentContext context)
     {
-        var tool =
-            ChatTool.CreateFunctionTool(
-                functionName: "GetCurrentWeather",
-                functionDescription: "Get current weather by city name",
-                functionParameters:
-                    BinaryData.FromObjectAsJson(
-                    new
-                    {
-                        type = "object",
-
-                        properties = new
-                        {
-                            location = new
-                            {
-                                type = "string",
-                                description = "City name"
-                            }
-                        },
-
-                        required = new[] { "location" }
-                    }));
+        var tool = CreateWeatherTool();
 
         List<ChatMessage> messages =
         [
@@ -83,69 +54,106 @@ public sealed class AgentService
             new UserChatMessage(context.Input)
         ];
 
-        ChatCompletion completion;
-        try
-        {
-            completion =
-                await _chatClient.CompleteChatAsync(
-                    messages,
-                    new ChatCompletionOptions
-                    {
-                        Tools = { tool }
-                    });
-        }
-        catch (Exception ex)
-        {
-            var shortError = ErrorHelper.GetShortError(ex);
-            context.Items["AgentError"] = shortError;
-            var weatherError = context.Items.TryGetValue("WeatherError", out var w) ? w?.ToString() : null;
-            return ErrorHelper.CombineErrors(shortError, weatherError);
-        }
+        var completion = await _chatClient.CompleteChatAsync(
+            messages,
+            new ChatCompletionOptions { Tools = { tool } });
 
         SaveUsage(context, completion);
 
-        /*
-         * Normal answer
-         */
-        if (completion.FinishReason !=
-            ChatFinishReason.ToolCalls)
-        {
-            return completion.Content[0].Text;
-        }
+        if (completion.Value.FinishReason != ChatFinishReason.ToolCalls)
+            return GetCompletionText(completion);
 
-        /*
-         * Tool execution
-         */
-        foreach (var call in completion.ToolCalls)
+        // The assistant message containing ALL tool calls must be added exactly once.
+        messages.Add(new AssistantChatMessage(completion));
+
+        var toolCalls = completion.Value.ToolCalls;
+        if (toolCalls.Count == 0)
+            throw new InvalidOperationException("The model indicated tool calls but returned no tool calls.");
+
+        foreach (var call in toolCalls)
         {
-            if (call.FunctionName !=
-                "GetCurrentWeather")
-            {
-                continue;
-            }
+            if (!string.Equals(call.FunctionName, WeatherToolName, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Unsupported tool '{call.FunctionName}'.");
+
             context.Items["ToolName"] = call.FunctionName;
             context.Items["ToolCallId"] = call.Id;
-            using JsonDocument json = JsonDocument.Parse(call.FunctionArguments);
-            string location = json.RootElement.GetProperty("location").GetString()!;
+
+            var location = ParseLocation(call.FunctionArguments);
+            context.WeatherLocations.Add(location);
             context.Items["WeatherLocation"] = location;
-            WeatherInfo weather;
-            try
-            {
-                weather = await _weatherService.GetCurrentWeatherAsync(location);
-            }
-            catch (Exception ex)
-            {
-                // Store concise weather service error and return it immediately.
-                var weatherError = ErrorHelper.GetShortError(ex);
-                context.Items["WeatherError"] = weatherError;
-                return ErrorHelper.CombineErrors(null, weatherError);
-            }
-            context.WeatherLocation = location;
 
-            string airQuality = WeatherHelper.GetAirQualityDescription(weather.AirQualityIndex);
+            var weather = await _weatherService.GetCurrentWeatherAsync(location);
+            var toolResult = FormatWeather(weather);
 
-            string toolResult =
-             $"""
+            messages.Add(new ToolChatMessage(call.Id, toolResult));
+        }
+
+        var finalAnswer = await _chatClient.CompleteChatAsync(messages);
+        SaveUsage(context, finalAnswer);
+
+        return GetCompletionText(finalAnswer);
+    }
+
+    private static ChatTool CreateWeatherTool() =>
+        ChatTool.CreateFunctionTool(
+            functionName: WeatherToolName,
+            functionDescription: "Get current weather by city name",
+            functionParameters: BinaryData.FromObjectAsJson(new
+            {
+                type = "object",
+                properties = new
+                {
+                    location = new
+                    {
+                        type = "string",
+                        description = "City name"
+                    }
+                },
+                required = new[] { "location" }
+            }));
+
+    private static string ParseLocation(BinaryData arguments)
+    {
+        try
+        {
+            using var json = JsonDocument.Parse(arguments);
+
+            if (!json.RootElement.TryGetProperty("location", out var locationElement) ||
+                locationElement.ValueKind != JsonValueKind.String)
+            {
+                throw new InvalidOperationException("Weather tool arguments do not contain a valid 'location'.");
+            }
+
+            var location = locationElement.GetString()?.Trim();
+            if (string.IsNullOrWhiteSpace(location))
+                throw new InvalidOperationException("Weather tool returned an empty location.");
+
+            return location;
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("Weather tool returned invalid JSON arguments.", ex);
+        }
+    }
+
+    private static string GetCompletionText(ChatCompletion completion)
+    {
+        var text = completion.Content
+            .Where(x => !string.IsNullOrWhiteSpace(x.Text))
+            .Select(x => x.Text)
+            .FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(text))
+            throw new InvalidOperationException("The model returned an empty response.");
+
+        return text;
+    }
+
+    private static string FormatWeather(WeatherInfo weather)
+    {
+        var airQuality = WeatherHelper.GetAirQualityDescription(weather.AirQualityIndex);
+
+        return $"""
             Current weather information:
 
             Location:   {weather.Location}
@@ -188,43 +196,20 @@ public sealed class AgentService
             - PM2.5: {weather.Pm25}
             - PM10: {weather.Pm10}
             """;
-
-            messages.Add(new AssistantChatMessage(completion));
-            messages.Add(new ToolChatMessage(call.Id, toolResult));
-        }
-
-        try
-        {
-            ChatCompletion finalAnswer = await this._chatClient.CompleteChatAsync(messages);
-            SaveUsage(context, finalAnswer);
-            return finalAnswer.Content[0].Text;
-        }
-        catch (Exception ex)
-        {
-            var openAiError = ErrorHelper.GetShortError(ex);
-            context.Items["AgentError"] = openAiError;
-            var weatherError = context.Items.TryGetValue("WeatherError", out var w) ? w?.ToString() : null;
-            return ErrorHelper.CombineErrors(openAiError, weatherError);
-        }
     }
 
-    /// <summary>
-    /// Saves the total token usage from the chat completion into the context items.        
-    /// </summary>
-    /// <param name="context">The agent context.</param>
-    /// <param name="completion">The chat completion.</param>
-    private void SaveUsage(
-    AgentContext context,
-    ChatCompletion completion)
+    private static void SaveUsage(AgentContext context, ChatCompletion completion)
     {
-        if (completion?.Usage == null)
+        if (completion.Usage is null)
             return;
 
-        object usageObj = completion.Usage!;
-
-        int inputTokens = AgentServiceHelpers.TryGetInt(usageObj, "InputTokenCount", "InputTokens", "PromptTokens", "PromptTokenCount");
-        int outputTokens = AgentServiceHelpers.TryGetInt(usageObj, "OutputTokenCount", "OutputTokens", "CompletionTokens", "CompletionTokenCount");
-        int totalTokens = AgentServiceHelpers.TryGetInt(usageObj, "TotalTokenCount", "TotalTokens", "total_tokens", "Total");
+        var usageObj = completion.Usage;
+        var inputTokens = AgentServiceHelpers.TryGetInt(
+            usageObj, "InputTokenCount", "InputTokens", "PromptTokens", "PromptTokenCount");
+        var outputTokens = AgentServiceHelpers.TryGetInt(
+            usageObj, "OutputTokenCount", "OutputTokens", "CompletionTokens", "CompletionTokenCount");
+        var totalTokens = AgentServiceHelpers.TryGetInt(
+            usageObj, "TotalTokenCount", "TotalTokens", "total_tokens", "Total");
 
         if (totalTokens == 0)
             totalTokens = inputTokens + outputTokens;
@@ -232,26 +217,43 @@ public sealed class AgentService
         if (totalTokens <= 0)
             return;
 
-        var usage = new TokenUsageInfo
+        if (!context.Items.TryGetValue("TokenUsage", out var existingObj) || existingObj is not TokenUsageInfo usage)
         {
-            Model = completion.Model ?? string.Empty,
-            InputTokens = inputTokens,
-            OutputTokens = outputTokens,
-            TotalTokens = totalTokens,
-            EstimatedCost = 0m
-        };
-
-        var env = Environment.GetEnvironmentVariable("PRICE_PER_1K_TOKENS");
-        if (!string.IsNullOrWhiteSpace(env)
-            && decimal.TryParse(env, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var pricePer1k))
-        {
-            usage.EstimatedCost = Math.Round((usage.TotalTokens / 1000m) * pricePer1k, 6);
+            usage = new TokenUsageInfo
+            {
+                Model = completion.Model ?? string.Empty
+            };
+            context.Items["TokenUsage"] = usage;
         }
 
-        // per-request usage and cost
-        context.Items["TokenUsage"] = usage;
+        usage.InputTokens += inputTokens;
+        usage.OutputTokens += outputTokens;
+        usage.TotalTokens += totalTokens;
+
+        if (string.IsNullOrWhiteSpace(usage.Model))
+            usage.Model = completion.Model ?? string.Empty;
+
+        usage.EstimatedCost = CalculateCost(usage.TotalTokens);
+
         context.Items["TotalTokensPerRequest"] = usage.TotalTokens;
         context.Items["EstimatedCostPerRequest"] = usage.EstimatedCost;
+        context.Items["TotalTokens"] = usage.TotalTokens;
+        context.Items["EstimatedCost"] = usage.EstimatedCost;
+    }
 
+    private static decimal CalculateCost(int totalTokens)
+    {
+        var env = Environment.GetEnvironmentVariable("PRICE_PER_1K_TOKENS");
+        if (string.IsNullOrWhiteSpace(env) ||
+            !decimal.TryParse(
+                env,
+                System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var pricePer1K))
+        {
+            return 0m;
+        }
+
+        return Math.Round((totalTokens / 1000m) * pricePer1K, 6);
     }
 }

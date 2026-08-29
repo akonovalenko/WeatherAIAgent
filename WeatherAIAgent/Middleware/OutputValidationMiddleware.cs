@@ -1,77 +1,51 @@
 using System.Text.RegularExpressions;
-using WeatherAgent.Middleware;
 using WeatherAIAgent.Models;
 
-namespace WeatherAIAgent.Middleware;
+namespace WeatherAgent.Middleware;
 
 /// <summary>
-/// Middleware for validating the output of the weather agent.
+/// Validates that a weather response references every location requested through the weather tool.
 /// </summary>
-public sealed class OutputValidationMiddleware: IAgentMiddleware
+public sealed class OutputValidationMiddleware : IAgentMiddleware
 {
     /// <summary>
-    /// Validates the output of the weather agent to ensure it contains the expected location.  
+    /// Validates that a weather response references every location requested through the weather tool.
     /// </summary>
-    /// <param name="context">The context of the agent.</param>
-    /// <param name="output">The output to validate.</param>
-    /// <returns>The validated output.</returns>
+    /// <param name="context">The agent context.</param>
+    /// <param name="next">The next delegate in the pipeline.</param>
+    /// <returns>The result of the middleware execution.</returns>
     public async Task<string> InvokeAsync(
-         AgentContext context,
-         Func<Task<string>> next)
+        AgentContext context,
+        Func<Task<string>> next)
     {
         var output = await next();
 
-        var expectedLocation = context.WeatherLocation;
-
-        if (string.IsNullOrWhiteSpace(expectedLocation))
+        if (context.WeatherLocations.Count == 0)
             return output;
 
-
-        if (!IsCorrectLocation(
-                output,
-                expectedLocation))
+        foreach (var location in context.WeatherLocations)
         {
-            return BuildValidationError(
-                expectedLocation);
+            if (!ContainsLocation(output, location))
+            {
+                return $"Output validation failed. The response does not match the expected location '{location}'.";
+            }
         }
-
 
         return output;
     }
 
     /// <summary>
-    /// Checks if the output contains the expected location, ignoring case and ensuring it is a whole word match.
+    /// Checks if the output contains the specified location, ignoring case and ensuring that the location is not part of a larger word.        
     /// </summary>
-    /// <param name="output">The output to check.</param>
-    /// <param name="expectedLocation">The expected location.</param>
-    /// <returns>True if the location is correct, false otherwise.</returns>
-    private bool IsCorrectLocation(string output, string expectedLocation)
+    /// <param name="output">The output string to search.</param>
+    /// <param name="location">The location to search for.</param>
+    /// <returns>true if the location is found; otherwise, false.</returns>
+    private static bool ContainsLocation(string output, string location)
     {
-        if (string.IsNullOrWhiteSpace(output) ||
-            string.IsNullOrWhiteSpace(expectedLocation))
-        {
+        if (string.IsNullOrWhiteSpace(output) || string.IsNullOrWhiteSpace(location))
             return false;
-        }
 
-        var pattern =
-            $@"(?<!\w){Regex.Escape(expectedLocation)}(?!\w)";
-
-        return Regex.IsMatch(
-            output,
-            pattern,
-            RegexOptions.IgnoreCase);
-    }
-
-    /// <summary>
-    /// This method builds a validation error message indicating that the output does not match the expected location.
-    /// </summary>
-    /// <param name="location">The expected location.</param>
-    /// <returns></returns>
-    private string BuildValidationError(string location)
-    {
-        return
-            $"Output validation failed. " +
-            $"The response does not match the expected location '{location}'. " +
-            $"The weather forecast must only be generated for this location.";
+        var pattern = $@"(?<!\w){Regex.Escape(location)}(?!\w)";
+        return Regex.IsMatch(output, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 }

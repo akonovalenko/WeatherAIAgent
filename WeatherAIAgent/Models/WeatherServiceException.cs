@@ -1,15 +1,21 @@
 namespace WeatherAgent.Services;
 
+/// <summary>
+/// Represents an error returned or caused by the weather service.
+/// </summary>
 public sealed class WeatherServiceException : Exception
 {
-    /// <summary>
-    /// Optional numeric status (e.g. HTTP status code) for concise logging.
-    /// </summary>
     public int? Status { get; }
+    public bool IsTransient { get; }
 
-    public WeatherServiceException(string message, int? status = null, Exception? innerException = null)
+    public WeatherServiceException(
+        string message,
+        int? status = null,
+        bool isTransient = false,
+        Exception? innerException = null)
         : base(message, innerException)
     {
         Status = status;
+        IsTransient = isTransient;
     }
 }

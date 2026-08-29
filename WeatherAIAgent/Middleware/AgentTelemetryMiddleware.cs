@@ -5,28 +5,22 @@ using WeatherAIAgent.Models;
 namespace WeatherAgent.Middleware;
 
 /// <summary>
-/// Middleware that captures telemetry data for agent requests, including duration, input length, token usage, and estimated cost.
+/// Captures request duration and basic agent telemetry.
 /// </summary>
-public sealed class AgentTelemetryMiddleware 
-    : IAgentMiddleware
+public sealed class AgentTelemetryMiddleware : IAgentMiddleware
 {
     private readonly ILogger<AgentTelemetryMiddleware> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AgentTelemetryMiddleware"/> class with the specified logger.   
-    /// </summary>
-    /// <param name="logger">The logger to use.</param>
-    public AgentTelemetryMiddleware(
-        ILogger<AgentTelemetryMiddleware> logger)
+    public AgentTelemetryMiddleware(ILogger<AgentTelemetryMiddleware> logger)
     {
         this._logger = logger;
     }
 
     /// <summary>
-    /// Invokes the middleware, capturing telemetry data for the agent request, including duration, input length, token usage, and estimated cost.
+    /// Invokes the middleware to capture request duration and log basic agent telemetry.
     /// </summary>
     /// <param name="context">The agent context.</param>
-    /// <param name="next">The next middleware in the pipeline.</param>
+    /// <param name="next">The next delegate in the pipeline.</param>
     /// <returns>The result of the middleware execution.</returns>
     public async Task<string> InvokeAsync(
         AgentContext context,
@@ -38,27 +32,20 @@ public sealed class AgentTelemetryMiddleware
         {
             var result = await next();
             stopwatch.Stop();
-            var duration = stopwatch.ElapsedMilliseconds;
-            context.Items["DurationMs"] = duration;
+            context.Items["DurationMs"] = stopwatch.ElapsedMilliseconds;
 
-            // Metrics
             this._logger.LogInformation(
-                """
-                Agent Metrics:
-                CorrelationId: {CorrelationId}
-                Duration:      {Duration} ms
-                Input length:  {InputLength}
-
-                """,
+                "Agent metrics: CorrelationId={CorrelationId}, DurationMs={DurationMs}, InputLength={InputLength}",
                 context.CorrelationId,
-                duration,
+                stopwatch.ElapsedMilliseconds,
                 context.Input.Length);
 
             return result;
         }
-        catch(Exception ex)
+        catch
         {
-            this._logger.LogError(ex, "Agent telemetry captured failure");
+            stopwatch.Stop();
+            context.Items["DurationMs"] = stopwatch.ElapsedMilliseconds;
             throw;
         }
     }
