@@ -9,9 +9,8 @@ public sealed class WeatherApiOptions
 
     public required string ApiKey { get; init; }
 
-    public string BaseUrl { get; init; } = "https://api.weatherapi.com/v1";
-
-    public string Language { get; init; } = "ru";
+    public required string BaseUrl { get; init; }
+    public required string Language { get; init; }
 
     public bool AirQuality { get; init; } = false;
 
