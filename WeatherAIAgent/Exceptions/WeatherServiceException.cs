@@ -1,4 +1,4 @@
-namespace WeatherAgent.Services;
+namespace WeatherAIAgent.Exceptions;
 
 /// <summary>
 /// Represents an error returned or caused by the weather service.

@@ -1,3 +1,5 @@
+using WeatherAIAgent.Interfaces;
+
 namespace WeatherAIAgent.Models;
 
 /// <summary>
@@ -9,9 +11,11 @@ public sealed class OpenAIOptions :  ILLMProviderOptions
 {
     public const string SectionName = "OpenAI";
 
-    public string ApiKey { get; set; } = string.Empty;
+    public string? ApiKey { get; set; }
 
-    public string Endpoint { get; set; } = string.Empty;
+    public string? Endpoint { get; set; }
 
-    public string Model { get; set; } = string.Empty;
+    public string? Model { get; set; }
+
+    public int TimeOutSec { get; set; }
 }

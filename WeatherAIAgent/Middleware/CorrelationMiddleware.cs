@@ -1,57 +1,31 @@
-using Microsoft.Extensions.Logging;
-using WeatherAIAgent.Models;
-using WeatherAIAgent.Helpers;
+using WeatherAgent.Models;
+using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Middleware;
 
 /// <summary>
-/// Middleware that assigns a unique correlation identifier
-/// to every agent request.
+/// Assigns a correlation ID. Lifecycle logging belongs to LoggingMiddleware.
 /// </summary>
-/// <Author>Oleksii Konovalenko</Author>
 public sealed class CorrelationMiddleware : IAgentMiddleware
 {
-    private readonly ILogger<CorrelationMiddleware> _logger;
+    public int Order => 10;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="CorrelationMiddleware"/> class with the specified logger.
-    /// </summary>
-    /// <param name="logger">The logger to use.</param>
-    public CorrelationMiddleware(
-        ILogger<CorrelationMiddleware> logger)
-    {
-        this._logger = logger;
-    }
-
-    /// <summary>
-    /// Invokes the middleware, assigning a unique correlation identifier to the agent request and logging the start and completion of the request.
+    /// Assigns a correlation ID to the context if it is not already set. This ensures that each request can be uniquely identified and traced through the system.  
     /// </summary>
     /// <param name="context">The agent context.</param>
     /// <param name="next">The next middleware in the pipeline.</param>
     /// <returns>The result of the middleware execution.</returns>
-    public async Task<string> InvokeAsync(
+    public Task<string> InvokeAsync(
         AgentContext context,
         Func<Task<string>> next)
     {
-        context.CorrelationId = Guid.NewGuid().ToString();
-        context.Items["StartedAt"] = DateTime.UtcNow;
-        this._logger.LogInformation("Agent request started. CorrelationId: {CorrelationId}", context.CorrelationId);
-
-        try
+        if (string.IsNullOrWhiteSpace(context.CorrelationId))
         {
-            var result = await next();
-            this._logger.LogInformation("Agent request completed. CorrelationId: {CorrelationId}", context.CorrelationId);
-            return result;
+            context.CorrelationId = Guid.NewGuid().ToString("N");
         }
-        catch (Exception ex)
-        {
-            this._logger.LogError(
-                "Agent request failed. CorrelationId: {CorrelationId}. Error: {Error}",
-                context.CorrelationId,
-                ErrorHelper.GetShortError(ex));
 
-            throw;
-        }
+        return next();
     }
-
 }
+

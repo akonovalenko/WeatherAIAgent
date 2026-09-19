@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
-using WeatherAIAgent.Models;
+using WeatherAgent.Models;
+using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Middleware;
 
@@ -8,6 +9,8 @@ namespace WeatherAgent.Middleware;
 /// </summary>
 public sealed class GuardMiddleware : IAgentMiddleware
 {
+    public int Order => 50;
+
     private const int MinInputLength = 3;
     private const int MaxInputLength = 500;
     private readonly ILogger<GuardMiddleware> _logger;

@@ -1,3 +1,5 @@
+using WeatherAIAgent.Interfaces;
+
 namespace WeatherAIAgent.Models;
 
 /// <summary>
@@ -6,13 +8,14 @@ namespace WeatherAIAgent.Models;
 /// <Author>Oleksii Konovalenko</Author>
 /// <CreatedDate></CreatedDate>
 public sealed class NvidiaOptions : ILLMProviderOptions
-
 {
     public const string SectionName = "nVidia";
 
-    public string ApiKey { get; set; } = string.Empty;
+    public string? ApiKey { get; set; }
 
-    public string Endpoint { get; set; } = string.Empty;
+    public string? Endpoint { get; set; }
 
-    public string Model { get; set; } = string.Empty;
+    public string? Model { get; set; }
+
+    public int TimeOutSec { get; set; }
 }

@@ -1,4 +1,4 @@
-using WeatherAgent.Services;
+using WeatherAIAgent.Exceptions;
 
 namespace WeatherAIAgent.Helpers;
 
@@ -34,10 +34,12 @@ public static class ErrorHelper
 
         return root switch
         {
+            WeatherLocationMismatchException mismatch => $"The weather service resolved a different location ('{mismatch.ResolvedLocation}') than requested ('{mismatch.RequestedLocation}'). Please enter the city name again.",
             WeatherServiceException => "Unable to retrieve weather data. Please try again later.",
             HttpRequestException => "The external service is temporarily unavailable. Please try again later.",
+            AgentTimeoutException => "The request timed out. Please try again.",
             TimeoutException => "The request timed out. Please try again.",
-            TaskCanceledException => "The request timed out. Please try again.",
+            TaskCanceledException => "The request was cancelled. Please try again.",
             _ => "The agent could not complete the request. Please try again."
         };
     }

@@ -1,41 +1,46 @@
 using Microsoft.Extensions.Logging;
 using WeatherAgent.Models;
-using WeatherAIAgent.Models;
+using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Middleware;
 
 /// <summary>
-/// Reports token usage accumulated across all LLM calls in the current request.
+/// Reports token usage collected by AgentService.
 /// </summary>
 public sealed class TokenUsageMiddleware : IAgentMiddleware
 {
+    public int Order => 100;
+
     private readonly ILogger<TokenUsageMiddleware> _logger;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="TokenUsageMiddleware"/> class with the specified logger.       
+    /// Initializes a new instance of the <see cref="TokenUsageMiddleware"/> class with the specified logger.
     /// </summary>
-    /// <param name="logger"></param>
+    /// <param name="logger">The logger to use.</param>
     public TokenUsageMiddleware(ILogger<TokenUsageMiddleware> logger)
     {
         this._logger = logger;
     }
 
     /// <summary>
-    /// Invokes the middleware to report token usage after the next middleware in the pipeline has been executed.
+    /// Invokes the middleware to log token usage information after the next middleware in the pipeline has been executed.
     /// </summary>
     /// <param name="context">The agent context.</param>
-    /// <param name="next"></param>
-    /// <returns></returns>
+    /// <param name="next">The next middleware in the pipeline.</param>
+    /// <returns>The result of the middleware execution.</returns>
     public async Task<string> InvokeAsync(
         AgentContext context,
         Func<Task<string>> next)
     {
         var result = await next();
+        var usage = context.Metadata.TokenUsage;
 
-        if (context.Items.TryGetValue("TokenUsage", out var value) && value is TokenUsageInfo usage)
+        if (usage is not null)
         {
             this._logger.LogInformation(
-                "Token usage: {TotalTokens} tokens; estimated cost: ${EstimatedCost}",
+                "\nToken usage: InputTokens={InputTokens}, OutputTokens={OutputTokens}, TotalTokens={TotalTokens}, EstimatedCost={EstimatedCost}\n",
+                usage.InputTokens,
+                usage.OutputTokens,
                 usage.TotalTokens,
                 usage.EstimatedCost.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }

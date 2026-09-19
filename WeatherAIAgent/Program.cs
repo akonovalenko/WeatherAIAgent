@@ -25,7 +25,7 @@ namespace WeatherAgent
             builder.Logging.ClearProviders();
             builder.Logging.AddConsole();
             using var host = builder.Build();
-            var agent = host.Services.GetRequiredService<AgentService>();
+            var pipeline = host.Services.GetRequiredService<AgentPipeline>();
 
             Console.WriteLine("OpenAI Compatible AI Agent Demo by O.K.");
             Console.ForegroundColor = ConsoleColor.Green;
@@ -57,7 +57,6 @@ namespace WeatherAgent
                             input = input[..^1];
                             Console.Write("\b \b");
                         }
-
                         continue;
                     }
 
@@ -68,7 +67,6 @@ namespace WeatherAgent
                 if (string.IsNullOrWhiteSpace(input))
                     continue;
 
-                var pipeline = host.Services.GetRequiredService<AgentPipeline>();
                 var result = await pipeline.ExecuteAsync(input);
 
                 Console.WriteLine(result);

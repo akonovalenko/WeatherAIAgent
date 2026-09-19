@@ -1,4 +1,4 @@
-namespace WeatherAIAgent.Models;
+namespace WeatherAIAgent.Interfaces;
 
 /// <summary>
 /// Represents the configuration options for a large language model (LLM) provider.
@@ -10,4 +10,5 @@ public interface ILLMProviderOptions
     string ApiKey { get; }
     string Endpoint { get; }
     string Model { get; }
+    int TimeOutSec { get; }
 }

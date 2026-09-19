@@ -1,6 +1,9 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Net;
 using System.Text.Json;
+using WeatherAIAgent.Exceptions;
+using WeatherAIAgent.Interfaces;
 using WeatherAIAgent.Models;
 
 namespace WeatherAgent.Services;
@@ -12,60 +15,124 @@ public sealed class WeatherApiService : IWeatherService
 {
     private readonly HttpClient _httpClient;
     private readonly WeatherApiOptions _options;
+    private readonly ILogger<WeatherApiService> _logger;
 
-    public WeatherApiService(HttpClient httpClient, IOptions<WeatherApiOptions> options)
+    /// <summary>
+    /// Initializes a new instance of the WeatherApiService class.
+    /// </summary>
+    /// <param name="httpClient">The HTTP client.</param>
+    /// <param name="options">The weather API options.</param>
+    public WeatherApiService(
+        HttpClient httpClient,
+        IOptions<WeatherApiOptions> options,
+        ILogger<WeatherApiService> logger)
     {
-        _httpClient = httpClient;
-        _options = options.Value;
+        this._httpClient = httpClient;
+        this._options = options.Value;
+        this._logger = logger;
     }
 
-    public async Task<WeatherInfo> GetCurrentWeatherAsync(string location)
+    /// <summary>
+    /// Gets the current weather information for the specified location.
+    /// </summary>
+    /// <param name="location">The location for which to retrieve weather information.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The current weather information.</returns>
+    /// <exception cref="ArgumentException"></exception>
+    /// <exception cref="WeatherServiceException"></exception>
+    public async Task<WeatherInfo> GetCurrentWeatherAsync(
+        string location,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(location))
             throw new ArgumentException("Location cannot be empty.", nameof(location));
 
-        var aqi = _options.AirQuality ? "yes" : "no";
+        var aqi = this._options.AirQuality ? "yes" : "no";
         var url =
-            $"current.json?key={Uri.EscapeDataString(_options.ApiKey)}" +
-            $"&q={Uri.EscapeDataString(location)}" +
-            $"&lang={Uri.EscapeDataString(_options.Language)}" +
+            $"current.json?key={Uri.EscapeDataString(this._options.ApiKey)}" +
+            $"&q={Uri.EscapeDataString(location.Trim())}" +
+            $"&lang={Uri.EscapeDataString(this._options.Language)}" +
             $"&aqi={aqi}";
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        this._logger.LogInformation(
+            "Weather API request started. Location={Location}, AirQuality={AirQuality}, Language={Language}",
+            location,
+            this._options.AirQuality,
+            this._options.Language);
 
         try
         {
-            using var response = await _httpClient.GetAsync(url);
+            using var response = await this._httpClient.GetAsync(url, cancellationToken);
+
+            this._logger.LogInformation(
+                "Weather API HTTP response received. Location={Location}, StatusCode={StatusCode}, DurationMs={DurationMs}",
+                location,
+                (int)response.StatusCode,
+                stopwatch.ElapsedMilliseconds);
 
             if (!response.IsSuccessStatusCode)
             {
                 var status = (int)response.StatusCode;
-                var transient = IsTransientStatusCode(response.StatusCode);
                 throw new WeatherServiceException(
                     $"Weather API request failed: {status} {response.ReasonPhrase}",
                     status,
-                    transient);
+                    IsTransientStatusCode(response.StatusCode));
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync();
-            using var json = await JsonDocument.ParseAsync(stream);
-            return ParseWeather(json.RootElement);
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var weather = ParseWeather(json.RootElement);
+            stopwatch.Stop();
+
+            this._logger.LogInformation(
+                "Weather API request completed. RequestedLocation={RequestedLocation}, ResolvedLocation={ResolvedLocation}, DurationMs={DurationMs}",
+                location,
+                weather.Location,
+                stopwatch.ElapsedMilliseconds);
+
+            return weather;
         }
         catch (OperationCanceledException)
         {
-            // Preserve cancellation so callers can distinguish it from a service failure.
+            stopwatch.Stop();
+            this._logger.LogWarning(
+                "Weather API request cancelled. Location={Location}, DurationMs={DurationMs}",
+                location,
+                stopwatch.ElapsedMilliseconds);
             throw;
         }
-        catch (WeatherServiceException)
+        catch (WeatherServiceException ex)
         {
+            stopwatch.Stop();
+            this._logger.LogWarning(
+                ex,
+                "Weather API request failed. Location={Location}, DurationMs={DurationMs}",
+                location,
+                stopwatch.ElapsedMilliseconds);
             throw;
         }
         catch (JsonException ex)
         {
+            stopwatch.Stop();
+            this._logger.LogError(
+                ex,
+                "Weather API response parsing failed. Location={Location}, DurationMs={DurationMs}",
+                location,
+                stopwatch.ElapsedMilliseconds);
             throw new WeatherServiceException(
                 "Failed to parse weather service response.",
                 innerException: ex);
         }
         catch (HttpRequestException ex)
         {
+            stopwatch.Stop();
+            this._logger.LogError(
+                ex,
+                "Weather API HTTP request failed. Location={Location}, DurationMs={DurationMs}",
+                location,
+                stopwatch.ElapsedMilliseconds);
             throw new WeatherServiceException(
                 "Weather service request failed.",
                 isTransient: true,
@@ -73,6 +140,11 @@ public sealed class WeatherApiService : IWeatherService
         }
     }
 
+    /// <summary>
+    /// Parses the JSON response from the weather API into a WeatherInfo object.
+    /// </summary>
+    /// <param name="root">The root JSON element.</param>
+    /// <returns>The parsed weather information.</returns>
     private static WeatherInfo ParseWeather(JsonElement root)
     {
         var location = root.GetProperty("location");
@@ -106,6 +178,11 @@ public sealed class WeatherApiService : IWeatherService
         };
     }
 
+    /// <summary>
+    /// Determines whether the specified HTTP status code is considered transient.  
+    /// </summary>
+    /// <param name="statusCode">The HTTP status code.</param>
+    /// <returns>true if the status code is transient; otherwise, false.</returns>
     private static bool IsTransientStatusCode(HttpStatusCode statusCode) =>
         statusCode is HttpStatusCode.RequestTimeout
             or HttpStatusCode.TooManyRequests
@@ -114,6 +191,12 @@ public sealed class WeatherApiService : IWeatherService
             or HttpStatusCode.ServiceUnavailable
             or HttpStatusCode.GatewayTimeout;
 
+    /// <summary>
+    /// Gets the air quality value for a specific pollutant from the JSON response.
+    /// </summary>
+    /// <param name="root">The root JSON element.</param>
+    /// <param name="name">The name of the pollutant.</param>
+    /// <returns>The air quality value.</returns>
     private static double GetAirQualityValue(JsonElement root, string name)
     {
         if (!root.TryGetProperty("current", out var current) ||
@@ -127,6 +210,11 @@ public sealed class WeatherApiService : IWeatherService
         return value.GetDouble();
     }
 
+    /// <summary>
+    /// Gets the US EPA Air Quality Index (AQI) from the JSON response.
+    /// </summary>
+    /// <param name="root">The root JSON element.</param>
+    /// <returns>The AQI value.</returns>
     private static int GetAirQualityIndex(JsonElement root)
     {
         if (!root.TryGetProperty("current", out var current) ||

@@ -1,27 +1,23 @@
-namespace WeatherAIAgent.Models;
+using WeatherAIAgent.Models;
+
+namespace WeatherAgent.Models;
 
 /// <summary>
-/// Per-request state shared by the agent pipeline.
+/// Represents the context of an agent execution, including input, user information, cancellation token, and execution metadata.
 /// </summary>
 public sealed class AgentContext
 {
-    public string CorrelationId { get; set; } = Guid.NewGuid().ToString("N");
-    public string Input { get; set; } = string.Empty;
-    public string UserId { get; set; } = "console-user";
-    public Dictionary<string, object> Items { get; } = new();
+    public string CorrelationId { get; set; } = string.Empty;
 
-    /// <summary>
-    /// All locations used by weather tool calls during this request.
-    /// </summary>
+    public string Input { get; set; } = string.Empty;
+
+    public string? UserId { get; set; }
+
+    public CancellationToken CancellationToken { get; set; }
+
+    public WeatherExecutionState Weather { get; } = new();
+
     public HashSet<string> WeatherLocations { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    public string? WeatherLocation
-    {
-        get => Items.TryGetValue("WeatherLocation", out var value) ? value?.ToString() : null;
-        set
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-                Items["WeatherLocation"] = value;
-        }
-    }
+    public AgentExecutionMetadata Metadata { get; } = new();
 }

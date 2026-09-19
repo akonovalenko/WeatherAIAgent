@@ -1,33 +1,53 @@
-using WeatherAgent.Middleware;
-using WeatherAIAgent.Models;
+using WeatherAgent.Models;
+using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Services;
 
 /// <summary>
-/// Builds and executes the agent middleware pipeline.
+/// Executes the agent through the configured middleware pipeline.
 /// </summary>
 public sealed class AgentPipeline
 {
-    private readonly IEnumerable<IAgentMiddleware> _middlewares;
+    private readonly IReadOnlyList<IAgentMiddleware> _middlewares;
     private readonly AgentService _agentService;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AgentPipeline"/> class with the specified middlewares and agent service.
+    /// </summary>
+    /// <param name="middlewares">The middlewares.</param>
+    /// <param name="agentService">The agent service.</param>
     public AgentPipeline(
         IEnumerable<IAgentMiddleware> middlewares,
         AgentService agentService)
     {
-        _middlewares = middlewares;
-        _agentService = agentService;
+        this._middlewares = middlewares
+            .OrderBy(middleware => middleware.Order)
+            .ToArray();
+
+        this._agentService = agentService;
+
+        Console.WriteLine("[AgentDiagnostics] Middleware pipeline: " +
+            string.Join(" -> ", this._middlewares.Select(middleware => middleware.GetType().Name)));
     }
 
-    public Task<string> ExecuteAsync(string input)
-    {
-        var context = new AgentContext { Input = input };
 
-        var pipeline = _middlewares
-            .Reverse()
-            .Aggregate(
-                () => _agentService.AskAsync(context),
-                (next, middleware) => () => middleware.InvokeAsync(context, next));
+    public Task<string> ExecuteAsync(
+        string input,
+        CancellationToken cancellationToken = default)
+    {
+        var context = new AgentContext
+        {
+            Input = input,
+            CancellationToken = cancellationToken
+        };
+
+        Func<Task<string>> pipeline = () => this._agentService.AskAsync(context);
+
+        foreach (var middleware in this._middlewares.Reverse())
+        {
+            var next = pipeline;
+            pipeline = () => middleware.InvokeAsync(context, next);
+        }
 
         return pipeline();
     }

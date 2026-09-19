@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
+using WeatherAgent.Models;
 using WeatherAIAgent.Helpers;
-using WeatherAIAgent.Models;
+using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Middleware;
 
@@ -9,6 +10,8 @@ namespace WeatherAgent.Middleware;
 /// </summary>
 public sealed class ExceptionMiddleware : IAgentMiddleware
 {
+    public int Order => 30;
+
     private readonly ILogger<ExceptionMiddleware> _logger;
 
     /// <summary>
@@ -43,7 +46,7 @@ public sealed class ExceptionMiddleware : IAgentMiddleware
         }
         catch (Exception ex)
         {
-            context.Items["AgentError"] = ErrorHelper.GetShortError(ex);
+            context.Metadata.AgentError = ErrorHelper.GetShortError(ex);
 
             this._logger.LogError(
                 ex,

@@ -1,6 +1,7 @@
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
-using WeatherAIAgent.Models;
+using System.Text.RegularExpressions;
+using WeatherAgent.Models;
+using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Middleware;
 
@@ -9,13 +10,16 @@ namespace WeatherAgent.Middleware;
 /// </summary>
 public sealed class InputSanitizationMiddleware : IAgentMiddleware
 {
+    public int Order => 60;
+
     private readonly ILogger<InputSanitizationMiddleware> _logger;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="InputSanitizationMiddleware"/> class with the specified logger.
+    /// Initializes a new instance of the <see cref="InputSanitizationMiddleware"/> class.
     /// </summary>
     /// <param name="logger">The logger to use for logging sanitization messages.</param>
-    public InputSanitizationMiddleware(ILogger<InputSanitizationMiddleware> logger)
+    public InputSanitizationMiddleware(
+        ILogger<InputSanitizationMiddleware> logger)
     {
         this._logger = logger;
     }
@@ -24,8 +28,8 @@ public sealed class InputSanitizationMiddleware : IAgentMiddleware
     /// Invokes the middleware to sanitize the user input in the <see cref="AgentContext"/>.
     /// </summary>
     /// <param name="context">The agent context.</param>
-    /// <param name="next"></param>
-    /// <returns></returns>
+    /// <param name="next">The next middleware in the pipeline.</param>
+    /// <returns>The result returned by the next middleware.</returns>
     public async Task<string> InvokeAsync(
         AgentContext context,
         Func<Task<string>> next)
@@ -33,11 +37,14 @@ public sealed class InputSanitizationMiddleware : IAgentMiddleware
         var originalInput = context.Input;
         var sanitizedInput = Sanitize(originalInput);
 
-        context.Input = sanitizedInput;
-        context.Items["InputWasSanitized"] =
-            !string.Equals(originalInput, sanitizedInput, StringComparison.Ordinal);
+        var inputWasSanitized = !string.Equals(
+            originalInput,
+            sanitizedInput,
+            StringComparison.Ordinal);
 
-        if ((bool)context.Items["InputWasSanitized"])
+        context.Input = sanitizedInput;
+
+        if (inputWasSanitized)
         {
             this._logger.LogInformation(
                 "User input was normalized. CorrelationId: {CorrelationId}",
@@ -48,20 +55,26 @@ public sealed class InputSanitizationMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Sanitizes the input string by removing control characters (except for newline, carriage return, and tab), normalizing whitespace, and trimming leading/trailing spaces. 
+    /// Sanitizes the input string by removing control characters
+    /// except for newline, carriage return, and tab, normalizing
+    /// whitespace, and trimming leading/trailing spaces.
     /// </summary>
     /// <param name="input">The input string to sanitize.</param>
     /// <returns>The sanitized string.</returns>
     private static string Sanitize(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
+        {
             return string.Empty;
+        }
 
-        input = new string(input
-            .Where(c => !char.IsControl(c) || c is '\n' or '\r' or '\t')
-            .ToArray());
+        input = new string(
+            input
+                .Where(c => !char.IsControl(c) || c is '\n' or '\r' or '\t')
+                .ToArray());
 
         input = Regex.Replace(input, @"\s+", " ");
+
         return input.Trim();
     }
 }

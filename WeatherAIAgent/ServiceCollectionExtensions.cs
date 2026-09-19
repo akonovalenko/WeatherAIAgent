@@ -3,6 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using WeatherAgent.Middleware;
 using WeatherAgent.Services;
+using WeatherAgent.Tools;
+using WeatherAIAgent.Interfaces;
 using WeatherAIAgent.Models;
 
 namespace WeatherAgent.Extensions;
@@ -28,7 +30,8 @@ public static class ServiceCollectionExtensions
         services.Configure<OpenAIOptions>(configuration.GetSection(OpenAIOptions.SectionName));
         services.Configure<NvidiaOptions>(configuration.GetSection(NvidiaOptions.SectionName));
         services.Configure<WeatherApiOptions>(configuration.GetSection(WeatherApiOptions.SectionName));
-        services.AddSingleton<IChatClientFactory, ChatClientFactory>();
+        services.AddSingleton<IAIAgentFactory, AIAgentFactory>();
+        services.AddTransient<IWeatherTool, WeatherTool>();
         services.AddHttpClient<IWeatherService, WeatherApiService>(
             (sp, client) => {
                 var options = sp.GetRequiredService<IOptions<WeatherApiOptions>>().Value;
@@ -36,8 +39,9 @@ public static class ServiceCollectionExtensions
                 client.Timeout = options.Timeout;
             });
 
-        // Registration order is execution order. Retry must be inside the exception
-        // boundary so transient exceptions can propagate to it before final handling.
+        // Middleware execution order is defined by IAgentMiddleware.Order.
+        // Retry must be inside the exception boundary so transient exceptions can
+        // propagate to it before final handling.
         services.AddSingleton<IAgentMiddleware, CorrelationMiddleware>();
         services.AddSingleton<IAgentMiddleware, AgentTelemetryMiddleware>();
         services.AddSingleton<IAgentMiddleware, ExceptionMiddleware>();
@@ -45,12 +49,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAgentMiddleware, GuardMiddleware>();
         services.AddSingleton<IAgentMiddleware, InputSanitizationMiddleware>();
         services.AddSingleton<IAgentMiddleware, RateLimitMiddleware>();
-        services.AddSingleton<IAgentMiddleware, RetryMiddleware>();
         services.AddSingleton<IAgentMiddleware, OutputValidationMiddleware>();
         services.AddSingleton<IAgentMiddleware, TokenUsageMiddleware>();
 
-        services.AddSingleton<AgentPipeline>();
-        services.AddSingleton<AgentService>();
+        // AgentService depends on a typed HttpClient service. Keep the request
+        // pipeline transient so we do not capture a transient typed client in a singleton.
+        services.AddTransient<AgentService>();
+        services.AddTransient<AgentPipeline>();
 
         return services;
     }
