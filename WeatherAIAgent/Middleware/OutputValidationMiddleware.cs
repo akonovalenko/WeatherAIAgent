@@ -1,6 +1,5 @@
 using WeatherAgent.Models;
 using WeatherAIAgent.Exceptions;
-using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Middleware;
 
@@ -8,9 +7,20 @@ namespace WeatherAgent.Middleware;
 /// Validates that the final weather response is authoritative and corresponds
 /// to the city explicitly entered by the user.
 /// </summary>
-public sealed class OutputValidationMiddleware : IAgentMiddleware
+public sealed class OutputValidationMiddleware
+    : AgentMiddlewareBase<OutputValidationMiddleware>
 {
-    public int Order => 90;
+    public override int Order => 90;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="OutputValidationMiddleware"/> class with the specified logger.
+    /// </summary>
+    /// <param name="logger">The logger to use.</param>
+    public OutputValidationMiddleware(
+        ILogger<OutputValidationMiddleware> logger)
+        : base(logger)
+    {
+    }
 
     /// <summary>
     /// Validates that the final weather response is authoritative and corresponds
@@ -21,7 +31,9 @@ public sealed class OutputValidationMiddleware : IAgentMiddleware
     /// <returns>The result of the middleware execution.</returns>
     /// <exception cref="InvalidOperationException"></exception>
     /// <exception cref="WeatherLocationMismatchException"></exception>
-    public async Task<string> InvokeAsync(AgentContext context, Func<Task<string>> next)
+    public override async Task<string> InvokeAsync(
+        AgentContext context,
+        Func<Task<string>> next)
     {
         var output = await next();
         var expectedWeather = context.Weather.FormattedWeather;
@@ -39,24 +51,33 @@ public sealed class OutputValidationMiddleware : IAgentMiddleware
 
         var requestedLocation = context.Weather.RequestedLocation;
         var weather = context.Weather.WeatherInfo;
+
         if (string.IsNullOrWhiteSpace(requestedLocation) || weather is null)
-            throw new InvalidOperationException("Output validation failed: authoritative weather data is missing.");
+        {
+            throw new InvalidOperationException(
+                "Output validation failed: authoritative weather data is missing.");
+        }
 
         if (!LocationsMatch(requestedLocation, weather.Location))
-            throw new WeatherLocationMismatchException(requestedLocation, weather.Location);
+        {
+            throw new WeatherLocationMismatchException(
+                requestedLocation,
+                weather.Location);
+        }
 
         if (!string.Equals(output, expectedWeather, StringComparison.Ordinal))
-            throw new InvalidOperationException("Output validation failed: the response was modified after weather data was retrieved.");
+        {
+            throw new InvalidOperationException(
+                "Output validation failed: the response was modified after weather data was retrieved.");
+        }
 
         return output;
     }
 
     /// <summary>
-    /// Determines whether the requested location matches the resolved location from the weather service, ignoring case and whitespace. 
+    /// Determines whether the requested location matches the resolved location
+    /// from the weather service, ignoring case and whitespace.
     /// </summary>
-    /// <param name="requested">The requested location.</param>
-    /// <param name="resolved">The resolved location.</param>
-    /// <returns>true if the locations match; otherwise, false.</returns>
     private static bool LocationsMatch(string requested, string resolved)
     {
         var requestedNormalized = NormalizeLocation(requested);
@@ -69,10 +90,9 @@ public sealed class OutputValidationMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Normalizes a location string by trimming whitespace and extracting the first comma-separated component, if present. This helps to compare city names in a consistent manner.    
+    /// Normalizes a location string by trimming whitespace and extracting the
+    /// first comma-separated component, if present.
     /// </summary>
-    /// <param name="value">The location string to normalize.</param>
-    /// <returns>The normalized location string.</returns>
     private static string NormalizeLocation(string value)
     {
         var normalized = value.Trim();
@@ -81,6 +101,7 @@ public sealed class OutputValidationMiddleware : IAgentMiddleware
         // returns the canonical city in the Location field. Compare the first
         // comma-separated city component in that common case.
         var commaIndex = normalized.IndexOf(',');
+
         if (commaIndex > 0)
             normalized = normalized[..commaIndex];
 

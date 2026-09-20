@@ -1,26 +1,22 @@
-using Microsoft.Extensions.Logging;
 using WeatherAgent.Models;
 using WeatherAIAgent.Helpers;
-using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Middleware;
 
 /// <summary>
 /// Converts unhandled pipeline exceptions into a user-friendly response after retry processing is exhausted.
 /// </summary>
-public sealed class ExceptionMiddleware : IAgentMiddleware
+public sealed class ExceptionMiddleware : AgentMiddlewareBase<ExceptionMiddleware>
 {
-    public int Order => 30;
-
-    private readonly ILogger<ExceptionMiddleware> _logger;
+    public override int Order => 30;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ExceptionMiddleware"/> class with the specified logger.
     /// </summary>
     /// <param name="logger">The logger to use for logging exceptions.</param>
     public ExceptionMiddleware(ILogger<ExceptionMiddleware> logger)
+        : base(logger)
     {
-        this._logger = logger;
     }
 
     /// <summary>
@@ -29,7 +25,7 @@ public sealed class ExceptionMiddleware : IAgentMiddleware
     /// <param name="context">The agent context.</param>
     /// <param name="next">The next delegate in the pipeline.</param>
     /// <returns>The result of the middleware execution.</returns>
-    public async Task<string> InvokeAsync(
+    public override async Task<string> InvokeAsync(
         AgentContext context,
         Func<Task<string>> next)
     {
@@ -39,7 +35,7 @@ public sealed class ExceptionMiddleware : IAgentMiddleware
         }
         catch (OperationCanceledException)
         {
-            this._logger.LogWarning(
+            this.Logger.LogWarning(
                 "Agent request was cancelled. CorrelationId: {CorrelationId}",
                 context.CorrelationId);
             return "The request was cancelled.";
@@ -48,7 +44,7 @@ public sealed class ExceptionMiddleware : IAgentMiddleware
         {
             context.Metadata.AgentError = ErrorHelper.GetShortError(ex);
 
-            this._logger.LogError(
+            this.Logger.LogError(
                 ex,
                 "Unhandled agent error. CorrelationId: {CorrelationId}",
                 context.CorrelationId);

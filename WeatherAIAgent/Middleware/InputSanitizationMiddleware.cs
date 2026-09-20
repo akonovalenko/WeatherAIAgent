@@ -1,27 +1,22 @@
-using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
 using WeatherAgent.Models;
-using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Middleware;
 
 /// <summary>
 /// Normalizes unsafe control characters and whitespace without pretending to protect against prompt injection.
 /// </summary>
-public sealed class InputSanitizationMiddleware : IAgentMiddleware
+public sealed class InputSanitizationMiddleware : AgentMiddlewareBase<InputSanitizationMiddleware>
 {
-    public int Order => 60;
-
-    private readonly ILogger<InputSanitizationMiddleware> _logger;
+    public override int Order => 60;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InputSanitizationMiddleware"/> class.
     /// </summary>
     /// <param name="logger">The logger to use for logging sanitization messages.</param>
-    public InputSanitizationMiddleware(
-        ILogger<InputSanitizationMiddleware> logger)
+    public InputSanitizationMiddleware(ILogger<InputSanitizationMiddleware> logger)
+        : base(logger)
     {
-        this._logger = logger;
     }
 
     /// <summary>
@@ -30,7 +25,7 @@ public sealed class InputSanitizationMiddleware : IAgentMiddleware
     /// <param name="context">The agent context.</param>
     /// <param name="next">The next middleware in the pipeline.</param>
     /// <returns>The result returned by the next middleware.</returns>
-    public async Task<string> InvokeAsync(
+    public override async Task<string> InvokeAsync(
         AgentContext context,
         Func<Task<string>> next)
     {
@@ -46,7 +41,7 @@ public sealed class InputSanitizationMiddleware : IAgentMiddleware
 
         if (inputWasSanitized)
         {
-            this._logger.LogInformation(
+            this.Logger.LogInformation(
                 "User input was normalized. CorrelationId: {CorrelationId}",
                 context.CorrelationId);
         }

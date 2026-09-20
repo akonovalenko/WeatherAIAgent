@@ -1,26 +1,22 @@
 using System.Diagnostics;
-using Microsoft.Extensions.Logging;
 using WeatherAgent.Models;
-using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Middleware;
 
 /// <summary>
 /// Logs request lifecycle events. It does not create correlation IDs.
 /// </summary>
-public sealed class LoggingMiddleware : IAgentMiddleware
+public sealed class LoggingMiddleware : AgentMiddlewareBase<LoggingMiddleware>
 {
-    public int Order => 30;
-
-    private readonly ILogger<LoggingMiddleware> _logger;
+    public override int Order => 30;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="LoggingMiddleware"/> class with the specified logger.
     /// </summary>
     /// <param name="logger"></param>
     public LoggingMiddleware(ILogger<LoggingMiddleware> logger)
+        : base(logger)
     {
-        this._logger = logger;
     }
 
     /// <summary>
@@ -29,13 +25,13 @@ public sealed class LoggingMiddleware : IAgentMiddleware
     /// <param name="context">The agent context.</param>
     /// <param name="next">The next middleware in the pipeline.</param>
     /// <returns>The result of the middleware execution.</returns>
-    public async Task<string> InvokeAsync(
+    public override async Task<string> InvokeAsync(
         AgentContext context,
         Func<Task<string>> next)
     {
         var stopwatch = Stopwatch.StartNew();
 
-        this._logger.LogInformation(
+        this.Logger.LogInformation(
             "Agent request started. CorrelationId={CorrelationId}, InputLength={InputLength}",
             context.CorrelationId,
             context.Input.Length);
@@ -44,7 +40,7 @@ public sealed class LoggingMiddleware : IAgentMiddleware
         {
             var result = await next();
 
-            this._logger.LogInformation(
+            this.Logger.LogInformation(
                 "Agent request completed. CorrelationId={CorrelationId}, DurationMs={DurationMs}",
                 context.CorrelationId,
                 stopwatch.ElapsedMilliseconds);
@@ -55,7 +51,7 @@ public sealed class LoggingMiddleware : IAgentMiddleware
         {
             context.Metadata.AgentError = ex.Message;
 
-            this._logger.LogError(
+            this.Logger.LogError(
                 ex,
                 "Agent request failed. CorrelationId={CorrelationId}, DurationMs={DurationMs}",
                 context.CorrelationId,

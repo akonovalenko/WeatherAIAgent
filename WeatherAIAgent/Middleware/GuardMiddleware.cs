@@ -1,27 +1,24 @@
-using Microsoft.Extensions.Logging;
 using WeatherAgent.Models;
-using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Middleware;
 
 /// <summary>
 /// Performs cheap input validation before any sanitization or downstream work.
 /// </summary>
-public sealed class GuardMiddleware : IAgentMiddleware
+public sealed class GuardMiddleware : AgentMiddlewareBase<GuardMiddleware>
 {
-    public int Order => 50;
+    public override int Order => 50;
 
     private const int MinInputLength = 3;
     private const int MaxInputLength = 500;
-    private readonly ILogger<GuardMiddleware> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GuardMiddleware"/> class with the specified logger.
     /// </summary>
     /// <param name="logger">The logger to use for logging validation messages.</param>
     public GuardMiddleware(ILogger<GuardMiddleware> logger)
+        : base(logger)
     {
-        this._logger = logger;
     }
 
     /// <summary>
@@ -30,19 +27,19 @@ public sealed class GuardMiddleware : IAgentMiddleware
     /// <param name="context">The agent context.</param>
     /// <param name="next">The next delegate in the pipeline.</param>
     /// <returns>The result of the middleware execution.</returns>
-    public async Task<string> InvokeAsync(
+    public override async Task<string> InvokeAsync(
         AgentContext context,
         Func<Task<string>> next)
     {
         if (string.IsNullOrWhiteSpace(context.Input))
         {
-            this._logger.LogWarning("Empty user input received. CorrelationId: {CorrelationId}", context.CorrelationId);
+            this.Logger.LogWarning("Empty user input received. CorrelationId: {CorrelationId}", context.CorrelationId);
             return "Please enter a valid request.";
         }
 
         if (context.Input.Length > MaxInputLength)
         {
-            this._logger.LogWarning(
+            this.Logger.LogWarning(
                 "Input too long: {Length}. CorrelationId: {CorrelationId}",
                 context.Input.Length,
                 context.CorrelationId);
@@ -51,7 +48,7 @@ public sealed class GuardMiddleware : IAgentMiddleware
 
         if (context.Input.Trim().Length < MinInputLength)
         {
-            this._logger.LogWarning("Input too short. CorrelationId: {CorrelationId}", context.CorrelationId);
+            this.Logger.LogWarning("Input too short. CorrelationId: {CorrelationId}", context.CorrelationId);
             return $"Input is too short. Minimum allowed length is {MinInputLength} characters.";
         }
 

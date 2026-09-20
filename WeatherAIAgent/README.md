@@ -1,5 +1,7 @@
 # WeatherAIAgent
 
+**Product version: 1.2.0**
+
 A console application demonstrating a one-shot AI agent built with **Microsoft.Agents.AI**. The agent accepts a city name, invokes a weather tool, retrieves current weather from WeatherAPI, and returns the authoritative tool output without allowing the LLM to rewrite it.
 
 ## Main goals
@@ -7,7 +9,7 @@ A console application demonstrating a one-shot AI agent built with **Microsoft.A
 - Use `AIAgent` as the application-facing abstraction rather than exposing `ChatClient` to the service layer.
 - Support OpenAI-compatible providers through a factory.
 - Keep external weather access behind `IWeatherService`.
-- Demonstrate an application middleware pipeline with validation, correlation, telemetry, rate limiting, retry, exception handling, and token usage reporting.
+- Demonstrate an application middleware pipeline with validation, correlation, telemetry, rate limiting, exception handling, and token usage reporting.
 - Preserve the original weather response as the source of truth.
 
 ## Architecture
@@ -22,7 +24,6 @@ Program
       -> GuardMiddleware
       -> InputSanitizationMiddleware
       -> RateLimitMiddleware
-      -> RetryMiddleware
       -> OutputValidationMiddleware
       -> TokenUsageMiddleware
       -> AgentService
@@ -53,7 +54,7 @@ The pipeline is ordered by `IAgentMiddleware.Order`; registration order is not t
 2. The weather tool receives the city from `AgentContext`; the model does not provide a location argument.
 3. The tool calls WeatherAPI and stores the returned `WeatherInfo` and formatted output in the context.
 4. `AIAgentFactory` uses the Chat Completions adapter for OpenAI-compatible endpoints. This is intentional for providers that do not fully support the Responses API schema.
-5. A function-invocation middleware sets `context.Terminate = true` after a successful `GetCurrentWeather` call, preventing an unnecessary second inference step.
+5. The agent builder intercepts function invocation and sets `context.Terminate = true` after a successful `GetCurrentWeather` call, preventing an unnecessary second inference step.
 6. `OutputValidationMiddleware` verifies that the resolved location matches the requested location and that the final output is exactly the formatted tool result.
 
 ## Configuration
@@ -115,7 +116,7 @@ Enter a city name and press Enter. Press Esc while entering input to exit.
 | 90 | Output validation | Verifies authoritative weather output and location consistency. |
 | 100 | Token usage | Reports usage after the downstream operation completes. |
 
-Retry is deliberately not applied to `AgentTimeoutException` or `WeatherServiceException`, because the weather tool already retries transient weather-provider failures and repeating the complete LLM run would waste tokens.
+There is currently no separate `RetryMiddleware` in the archive. Transient retry behavior is handled by the weather HTTP service/provider configuration rather than by repeating the complete agent run. This avoids duplicating LLM calls and token usage.
 
 ## Architectural review notes
 

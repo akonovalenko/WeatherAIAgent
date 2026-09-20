@@ -1,21 +1,18 @@
 using System.Collections.Concurrent;
-using Microsoft.Extensions.Logging;
 using WeatherAgent.Models;
-using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Middleware;
 
 /// <summary>
 /// Limits requests per user using a fixed one-minute sliding window.
 /// </summary>
-public sealed class RateLimitMiddleware : IAgentMiddleware
+public sealed class RateLimitMiddleware : AgentMiddlewareBase<RateLimitMiddleware>
 {
-    public int Order => 70;
+    public override int Order => 70;
 
     private const int MaxRequests = 10;
     private const string AnonymousUserKey = "anonymous";
     private static readonly TimeSpan TimeWindow = TimeSpan.FromMinutes(1);
-    private readonly ILogger<RateLimitMiddleware> _logger;
     private readonly ConcurrentDictionary<string, List<DateTimeOffset>> _requests = new();
     private int _requestCounter;
 
@@ -24,8 +21,8 @@ public sealed class RateLimitMiddleware : IAgentMiddleware
     /// </summary>
     /// <param name="logger">The logger to use for logging.</param>
     public RateLimitMiddleware(ILogger<RateLimitMiddleware> logger)
+        : base(logger)
     {
-        this._logger = logger;
     }
 
     /// <summary>
@@ -34,7 +31,7 @@ public sealed class RateLimitMiddleware : IAgentMiddleware
     /// <param name="context">The agent context.</param>
     /// <param name="next">The next delegate in the pipeline.</param>
     /// <returns>The result of the middleware execution.</returns>
-    public async Task<string> InvokeAsync(
+    public override async Task<string> InvokeAsync(
         AgentContext context,
         Func<Task<string>> next)
     {
@@ -54,7 +51,7 @@ public sealed class RateLimitMiddleware : IAgentMiddleware
 
             if (timestamps.Count >= MaxRequests)
             {
-                this._logger.LogWarning(
+                this.Logger.LogWarning(
                     "Rate limit exceeded for user {UserId}. CorrelationId: {CorrelationId}",
                     userKey,
                     context.CorrelationId);
