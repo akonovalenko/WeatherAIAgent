@@ -10,5 +10,4 @@ public interface ILLMProviderOptions
     string ApiKey { get; }
     string Endpoint { get; }
     string Model { get; }
-    int TimeOutSec { get; }
 }

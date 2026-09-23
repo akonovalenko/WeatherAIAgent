@@ -31,6 +31,8 @@ public static class ServiceCollectionExtensions
         services.Configure<NvidiaOptions>(configuration.GetSection(NvidiaOptions.SectionName));
         services.Configure<WeatherApiOptions>(configuration.GetSection(WeatherApiOptions.SectionName));
         services.AddSingleton<IAIAgentFactory, AIAgentFactory>();
+        services.AddHttpClient();
+        services.AddSingleton<ILLMHealthService, LLMHealthService>();
         services.AddTransient<IWeatherTool, WeatherTool>();
         services.AddHttpClient<IWeatherService, WeatherApiService>(
             (sp, client) => {
@@ -40,9 +42,10 @@ public static class ServiceCollectionExtensions
             });
 
         // Middleware execution order is defined by IAgentMiddleware.Order.
-        // Retry must be inside the exception boundary so transient exceptions can
-        // propagate to it before final handling.
+        // No full-agent retry is registered because repeating an LLM run can
+        // duplicate latency and token usage.
         services.AddSingleton<IAgentMiddleware, CorrelationMiddleware>();
+        services.AddSingleton<IAgentMiddleware, LLMHealthMiddleware>();
         services.AddSingleton<IAgentMiddleware, AgentTelemetryMiddleware>();
         services.AddSingleton<IAgentMiddleware, ExceptionMiddleware>();
         services.AddSingleton<IAgentMiddleware, LoggingMiddleware>();

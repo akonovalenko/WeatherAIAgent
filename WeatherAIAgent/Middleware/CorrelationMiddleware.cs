@@ -32,15 +32,11 @@ public sealed class CorrelationMiddleware
         {
             context.CorrelationId = Guid.NewGuid().ToString("N");
 
-            Logger.LogDebug(
-                "Correlation ID assigned. CorrelationId={CorrelationId}",
-                context.CorrelationId);
+            Logger.LogDebug($"Correlation ID assigned. CorrelationId={context.CorrelationId}");
         }
         else
         {
-            Logger.LogDebug(
-                "Existing correlation ID preserved. CorrelationId={CorrelationId}",
-                context.CorrelationId);
+            Logger.LogDebug($"Existing correlation ID preserved. CorrelationId={context.CorrelationId}");
         }
 
         return next();

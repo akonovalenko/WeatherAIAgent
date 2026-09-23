@@ -10,6 +10,4 @@ public sealed class TokenUsageInfo
     public int OutputTokens { get; set; }
 
     public int TotalTokens { get; set; }
-
-    public decimal EstimatedCost { get; set; }
 }

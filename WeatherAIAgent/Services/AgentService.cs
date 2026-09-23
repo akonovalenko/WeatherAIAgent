@@ -1,11 +1,13 @@
 using Microsoft.Agents.AI;
-using Microsoft.Extensions.Logging;
 using WeatherAgent.Models;
 using WeatherAIAgent.Exceptions;
 using WeatherAIAgent.Interfaces;
 
 namespace WeatherAgent.Services;
 
+/// <summary>
+/// Provides services for interacting with AI agents, including processing input and retrieving formatted weather information.
+/// </summary>
 public sealed class AgentService
 {
     #region Private members
@@ -41,65 +43,32 @@ public sealed class AgentService
     /// <exception cref="AgentTimeoutException"></exception>
     public async Task<string> AskAsync(AgentContext context)
     {
-        var timeoutSeconds = context.Metadata.TimeoutSeconds;
-
-        using var timeoutCts =
-            new CancellationTokenSource(
-                TimeSpan.FromSeconds(timeoutSeconds));
-
-        using var linkedCts =
-            CancellationTokenSource.CreateLinkedTokenSource(
-                timeoutCts.Token,
-                context.CancellationToken);
-
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         try
         {
-            this._logger.LogDebug(
-                "Creating weather tool and AIAgent. CorrelationId={CorrelationId}",
-                context.CorrelationId);
+            this._logger.LogDebug(message: $"Creating weather tool and AIAgent. CorrelationId={context.CorrelationId}");
 
-            var weatherTool =
-                this._weatherTool.Create(
-                    context,
-                    linkedCts.Token);
-
-            this._logger.LogDebug(
-                "Weather tool created. CorrelationId={CorrelationId}",
-                context.CorrelationId);
+            var weatherTool = this._weatherTool.Create(context, context.CancellationToken);
 
             var agent = this._agentFactory.Create([weatherTool]);
 
-            this._logger.LogDebug(
-                "AIAgent created. CorrelationId={CorrelationId}",
-                context.CorrelationId);
-
             this._logger.LogInformation(
-                "Starting AIAgent.RunAsync. CorrelationId={CorrelationId}, " +
-                "ProviderTimeoutSeconds={TimeoutSeconds}, InputLength={InputLength}",
+                "Starting AIAgent.RunAsync. CorrelationId={CorrelationId}, TimeoutSeconds={TimeoutSeconds}, InputLength={InputLength}",
                 context.CorrelationId,
-                timeoutSeconds,
+                context.Metadata.TimeoutSeconds,
                 context.Input.Length);
 
-            var agentStopwatch =
-                System.Diagnostics.Stopwatch.StartNew();
+            var agentStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             try
             {
-                this._logger.LogInformation(
-                    "LLM/agent execution started. CorrelationId={CorrelationId}",
-                    context.CorrelationId);
-
-                var response = await agent.RunAsync(
-                    context.Input,
-                    cancellationToken: linkedCts.Token);
+                var response = await agent.RunAsync(context.Input, cancellationToken: context.CancellationToken);
 
                 agentStopwatch.Stop();
 
                 this._logger.LogInformation(
-                    "AIAgent.RunAsync returned. CorrelationId={CorrelationId}, " +
-                    "AgentDurationMs={DurationMs}",
+                    "AIAgent.RunAsync returned. CorrelationId={CorrelationId}, AgentDurationMs={DurationMs}",
                     context.CorrelationId,
                     agentStopwatch.ElapsedMilliseconds);
 
@@ -110,8 +79,7 @@ public sealed class AgentService
                 agentStopwatch.Stop();
 
                 this._logger.LogWarning(
-                    "AIAgent.RunAsync failed. CorrelationId={CorrelationId}, " +
-                    "AgentDurationMs={DurationMs}",
+                    "AIAgent.RunAsync failed. CorrelationId={CorrelationId}, AgentDurationMs={DurationMs}",
                     context.CorrelationId,
                     agentStopwatch.ElapsedMilliseconds);
 
@@ -121,51 +89,23 @@ public sealed class AgentService
             var weather = context.Weather;
 
             this._logger.LogInformation(
-                "Agent execution state after RunAsync. " +
-                "CorrelationId={CorrelationId}, ToolCalls={ToolCalls}, " +
-                "HasFormattedWeather={HasFormattedWeather}",
+                "Agent execution state after RunAsync. CorrelationId={CorrelationId}, ToolCalls={ToolCalls}, HasFormattedWeather={HasFormattedWeather}",
                 context.CorrelationId,
                 weather.ToolCallCount,
                 !string.IsNullOrWhiteSpace(weather.FormattedWeather));
 
             if (weather.ToolCallCount <= 0)
-            {
-                throw new InvalidOperationException(
-                    "The agent did not invoke the required weather tool.");
-            }
+                throw new InvalidOperationException("The agent did not invoke the required weather tool.");
 
             if (string.IsNullOrWhiteSpace(weather.FormattedWeather))
-            {
-                throw new InvalidOperationException(
-                    "The weather tool was invoked but did not produce an authoritative response.");
-            }
+                throw new InvalidOperationException("The weather tool was invoked but did not produce an authoritative response.");
 
             this._logger.LogInformation(
-                "AIAgent.RunAsync completed. CorrelationId={CorrelationId}, " +
-                "DurationMs={DurationMs}, ToolCalls={ToolCalls}",
-                context.CorrelationId,
-                stopwatch.ElapsedMilliseconds,
-                weather.ToolCallCount);
-
-            this._logger.LogInformation(
-                "Returning authoritative weather result. " +
-                "CorrelationId={CorrelationId}, TotalDurationMs={DurationMs}",
+                "Returning authoritative weather result. CorrelationId={CorrelationId}, TotalDurationMs={DurationMs}",
                 context.CorrelationId,
                 stopwatch.ElapsedMilliseconds);
 
             return weather.FormattedWeather;
-        }
-        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
-        {
-            this._logger.LogWarning(
-                "Agent application timeout reached. CorrelationId={CorrelationId}, " +
-                "TimeoutSeconds={TimeoutSeconds}, DurationMs={DurationMs}",
-                context.CorrelationId,
-                timeoutSeconds,
-                stopwatch.ElapsedMilliseconds);
-
-            throw new AgentTimeoutException(
-                $"The AI agent did not complete within {timeoutSeconds} seconds.");
         }
         catch (Exception ex)
         {
@@ -173,8 +113,7 @@ public sealed class AgentService
 
             this._logger.LogError(
                 ex,
-                "AgentService failed. CorrelationId={CorrelationId}, " +
-                "DurationMs={DurationMs}, ToolCalls={ToolCalls}",
+                "AgentService failed. CorrelationId={CorrelationId}, DurationMs={DurationMs}, ToolCalls={ToolCalls}",
                 context.CorrelationId,
                 stopwatch.ElapsedMilliseconds,
                 context.Weather.ToolCallCount);
@@ -184,8 +123,7 @@ public sealed class AgentService
         finally
         {
             stopwatch.Stop();
-            context.Metadata.DurationMs =
-                stopwatch.ElapsedMilliseconds;
+            context.Metadata.DurationMs = stopwatch.ElapsedMilliseconds;
         }
     }
 
@@ -212,9 +150,7 @@ public sealed class AgentService
 
         if (usage.TotalTokens == 0)
         {
-            usage.TotalTokens =
-                usage.InputTokens +
-                usage.OutputTokens;
+            usage.TotalTokens = usage.InputTokens + usage.OutputTokens;
         }
 
         if (usage.TotalTokens <= 0)
@@ -222,35 +158,7 @@ public sealed class AgentService
             return;
         }
 
-        usage.EstimatedCost =
-            CalculateCost(usage.TotalTokens);
-
         context.Metadata.TokenUsage = usage;
     }
 
-    /// <summary>
-    /// Calculates the estimated cost based on the total number of tokens used.
-    /// </summary>
-    /// <param name="totalTokens">The total number of tokens used.</param>
-    /// <returns>The estimated cost.</returns>
-    private static decimal CalculateCost(long totalTokens)
-    {
-        var env =
-            Environment.GetEnvironmentVariable(
-                "PRICE_PER_1K_TOKENS");
-
-        if (string.IsNullOrWhiteSpace(env) ||
-            !decimal.TryParse(
-                env,
-                System.Globalization.NumberStyles.Number,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out var pricePer1K))
-        {
-            return 0m;
-        }
-
-        return Math.Round(
-            (totalTokens / 1000m) * pricePer1K,
-            6);
-    }
 }

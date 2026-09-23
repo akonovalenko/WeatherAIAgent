@@ -92,7 +92,7 @@ public sealed class WeatherTool : IWeatherTool
             {
                 lastException = ex;
                 var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
-                _logger.LogWarning(ex, "Transient weather error. Retrying in {DelayMs} ms. Attempt {Attempt}/{MaxAttempts}. Location={Location}", delay.TotalMilliseconds, attempt, MaxAttempts, location);
+                this._logger.LogWarning(ex, "Transient weather error. Retrying in {DelayMs} ms. Attempt {Attempt}/{MaxAttempts}. Location={Location}", delay.TotalMilliseconds, attempt, MaxAttempts, location);
                 await Task.Delay(delay, cancellationToken);
             }
         }

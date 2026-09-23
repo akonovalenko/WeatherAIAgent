@@ -35,19 +35,15 @@ public sealed class ExceptionMiddleware : AgentMiddlewareBase<ExceptionMiddlewar
         }
         catch (OperationCanceledException)
         {
-            this.Logger.LogWarning(
-                "Agent request was cancelled. CorrelationId: {CorrelationId}",
-                context.CorrelationId);
+            this.Logger.LogWarning($"Agent request was cancelled. CorrelationId: {context.CorrelationId}");
+
             return "The request was cancelled.";
         }
         catch (Exception ex)
         {
             context.Metadata.AgentError = ErrorHelper.GetShortError(ex);
 
-            this.Logger.LogError(
-                ex,
-                "Unhandled agent error. CorrelationId: {CorrelationId}",
-                context.CorrelationId);
+            this.Logger.LogError(ex, $"Unhandled agent error. CorrelationId: {context.CorrelationId}");
 
             return ErrorHelper.GetUserFriendlyMessage(ex);
         }

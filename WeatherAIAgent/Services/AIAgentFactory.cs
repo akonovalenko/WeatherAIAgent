@@ -19,6 +19,7 @@ namespace WeatherAgent.Services;
 public sealed class AIAgentFactory : IAIAgentFactory
 {
     private readonly ILLMProviderOptions _options;
+    private readonly LLMOptions _llmOptions;
 
     // Оптимізований короткий промпт без суперечливих інструкцій та заборон.
     // Забезпечує миттєвий виклик тулу без довгого фази міркування (Reasoning).
@@ -37,6 +38,7 @@ public sealed class AIAgentFactory : IAIAgentFactory
         ArgumentNullException.ThrowIfNull(openAiOptions);
         ArgumentNullException.ThrowIfNull(nvidiaOptions);
 
+        this._llmOptions = llmOptions.Value;
         this._options = llmOptions.Value.Provider.ToLowerInvariant() switch
         {
             "openai" => openAiOptions.Value,
@@ -188,7 +190,7 @@ public sealed class AIAgentFactory : IAIAgentFactory
         var clientOptions = new OpenAIClientOptions
         {
             Endpoint = endpoint,
-            NetworkTimeout = TimeSpan.FromSeconds(_options.TimeOutSec > 0 ? _options.TimeOutSec : 30)
+            NetworkTimeout = TimeSpan.FromSeconds(Math.Max(1, _llmOptions.AgentTimeoutSeconds))
         };
 
         Console.WriteLine(

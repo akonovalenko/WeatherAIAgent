@@ -51,10 +51,7 @@ public sealed class RateLimitMiddleware : AgentMiddlewareBase<RateLimitMiddlewar
 
             if (timestamps.Count >= MaxRequests)
             {
-                this.Logger.LogWarning(
-                    "Rate limit exceeded for user {UserId}. CorrelationId: {CorrelationId}",
-                    userKey,
-                    context.CorrelationId);
+                this.Logger.LogWarning($"Rate limit exceeded for user {userKey}. CorrelationId: {context.CorrelationId}");
 
                 return "Request limit exceeded.\nMaximum 10 requests per minute.\nPlease wait and try again.";
             }

@@ -17,5 +17,4 @@ public sealed class OpenAIOptions :  ILLMProviderOptions
 
     public string? Model { get; set; }
 
-    public int TimeOutSec { get; set; }
 }

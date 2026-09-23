@@ -31,19 +31,13 @@ public sealed class LoggingMiddleware : AgentMiddlewareBase<LoggingMiddleware>
     {
         var stopwatch = Stopwatch.StartNew();
 
-        this.Logger.LogInformation(
-            "Agent request started. CorrelationId={CorrelationId}, InputLength={InputLength}",
-            context.CorrelationId,
-            context.Input.Length);
+        this.Logger.LogInformation($"Agent request started. CorrelationId={context.CorrelationId}, InputLength={context.Input.Length}");
 
         try
         {
             var result = await next();
 
-            this.Logger.LogInformation(
-                "Agent request completed. CorrelationId={CorrelationId}, DurationMs={DurationMs}",
-                context.CorrelationId,
-                stopwatch.ElapsedMilliseconds);
+            this.Logger.LogInformation($"Agent request completed. CorrelationId={context.CorrelationId}, DurationMs={stopwatch.ElapsedMilliseconds}");
 
             return result;
         }

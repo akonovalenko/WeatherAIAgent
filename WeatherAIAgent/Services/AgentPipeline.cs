@@ -30,7 +30,12 @@ public sealed class AgentPipeline
             string.Join(" -> ", this._middlewares.Select(middleware => middleware.GetType().Name)));
     }
 
-
+    /// <summary>
+    /// Executes the agent pipeline with the specified input and cancellation token.
+    /// </summary>
+    /// <param name="input">The input for the agent.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The result of the agent execution.</returns>
     public Task<string> ExecuteAsync(
         string input,
         CancellationToken cancellationToken = default)

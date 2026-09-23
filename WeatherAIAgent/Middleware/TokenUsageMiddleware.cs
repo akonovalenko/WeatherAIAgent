@@ -34,11 +34,10 @@ public sealed class TokenUsageMiddleware : AgentMiddlewareBase<TokenUsageMiddlew
         if (usage is not null)
         {
             this.Logger.LogInformation(
-                "\nToken usage: InputTokens={InputTokens}, OutputTokens={OutputTokens}, TotalTokens={TotalTokens}, EstimatedCost={EstimatedCost}\n",
+                "\nToken usage: InputTokens={InputTokens}, OutputTokens={OutputTokens}, TotalTokens={TotalTokens}\n",
                 usage.InputTokens,
                 usage.OutputTokens,
-                usage.TotalTokens,
-                usage.EstimatedCost.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                usage.TotalTokens);
         }
 
         return result;

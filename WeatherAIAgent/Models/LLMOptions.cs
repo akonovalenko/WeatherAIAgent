@@ -11,4 +11,10 @@ public sealed class LLMOptions
 
     /// <summary>Maximum time allowed for a single AIAgent run.</summary>
     public int AgentTimeoutSeconds { get; set; } = 120;
+
+    /// <summary>How often the provider health state is refreshed.</summary>
+    public int HealthCheckIntervalSeconds { get; set; } = 30;
+
+    /// <summary>Maximum time allowed for a provider health check.</summary>
+    public int HealthCheckTimeoutSeconds { get; set; } = 5;
 }

@@ -42,8 +42,7 @@ public sealed class OutputValidationMiddleware
         {
             if (context.WeatherLocations.Count > 0)
             {
-                throw new InvalidOperationException(
-                    "Weather tool execution did not produce an authoritative response.");
+                throw new InvalidOperationException("Weather tool execution did not produce an authoritative response.");
             }
 
             return output;
@@ -54,21 +53,17 @@ public sealed class OutputValidationMiddleware
 
         if (string.IsNullOrWhiteSpace(requestedLocation) || weather is null)
         {
-            throw new InvalidOperationException(
-                "Output validation failed: authoritative weather data is missing.");
+            throw new InvalidOperationException("Output validation failed: authoritative weather data is missing.");
         }
 
         if (!LocationsMatch(requestedLocation, weather.Location))
         {
-            throw new WeatherLocationMismatchException(
-                requestedLocation,
-                weather.Location);
+            throw new WeatherLocationMismatchException(requestedLocation, weather.Location);
         }
 
         if (!string.Equals(output, expectedWeather, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException(
-                "Output validation failed: the response was modified after weather data was retrieved.");
+            throw new InvalidOperationException("Output validation failed: the response was modified after weather data was retrieved.");
         }
 
         return output;

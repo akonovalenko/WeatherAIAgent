@@ -41,9 +41,7 @@ public sealed class InputSanitizationMiddleware : AgentMiddlewareBase<InputSanit
 
         if (inputWasSanitized)
         {
-            this.Logger.LogInformation(
-                "User input was normalized. CorrelationId: {CorrelationId}",
-                context.CorrelationId);
+            this.Logger.LogInformation($"User input was normalized. CorrelationId: {context.CorrelationId}");
         }
 
         return await next();
